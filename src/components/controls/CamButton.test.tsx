@@ -97,7 +97,7 @@ describe('CamButton', () => {
     }
   });
 
-  it('does NOT fetch data or load images for cameras unless clicked', async () => {
+  it('shows lazy still previews without fetching camera details until clicked', async () => {
     const loadCameras = vi.fn().mockResolvedValue(MOCK_CAMERAS);
     const fetchCameraDetails = vi.fn().mockResolvedValue({
       imageUrl: 'https://images.example.test/cam101-fresh.jpg',
@@ -125,11 +125,15 @@ describe('CamButton', () => {
     // 1. fetchCameraDetails was NEVER called
     expect(fetchCameraDetails).not.toHaveBeenCalled();
 
-    // 2. Both cameras have placeholder thumbnails (no img elements)
-    expect(screen.getByTestId('cam-thumb-placeholder-cam-101')).toBeVisible();
-    expect(screen.getByTestId('cam-thumb-placeholder-cam-102')).toBeVisible();
-    expect(screen.queryByAltText('EDSA - Guadalupe preview')).toBeNull();
-    expect(screen.queryByAltText('C5 - Bagong Ilog preview')).toBeNull();
+    // 2. Still previews use the image URLs already provided by list metadata.
+    expect(screen.getByAltText('EDSA - Guadalupe preview')).toHaveAttribute(
+      'src',
+      MOCK_CAMERAS[0].mediaUrl,
+    );
+    expect(screen.getByAltText('C5 - Bagong Ilog preview')).toHaveAttribute(
+      'src',
+      MOCK_CAMERAS[1].mediaUrl,
+    );
 
     // 3. No details section is shown
     expect(screen.queryByTestId('cam-detail-cam-101')).toBeNull();

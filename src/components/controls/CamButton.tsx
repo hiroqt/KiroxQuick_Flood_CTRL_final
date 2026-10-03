@@ -3,11 +3,8 @@
 // Cambutton on the right side of the map.
 // Lists all available webcams in Metro Manila in an on-demand floating panel.
 //
-// Optimization / Privacy requirement:
-// "We should not fetch all data on a certain cam unless clicked."
-// - Before click: only basic camera list metadata is rendered.
-//   No camera images are loaded (thumbnail shows a placeholder box),
-//   and no weather / detail API calls are made.
+// Before click, the list uses the image URL already present in camera metadata
+// for lazy still previews. It makes no per-camera detail or weather API calls.
 // - On click: fetches the full camera data (fresh image, Open-Meteo weather),
 //   renders the live image, expands camera details, and focuses the map.
 
@@ -296,14 +293,14 @@ export function CamButton({
                     void handleCameraClick(camera);
                   }}
                 >
-                  {/* Left: Square Thumbnail (placeholder until clicked) */}
+                  {/* Left: still preview from list metadata; video feeds use a placeholder */}
                   <div
                     className="baharoute-cam-item__thumb"
                     data-testid={`cam-thumb-${camera.sourceId}`}
                   >
-                    {details?.imageUrl ? (
+                    {details?.imageUrl || camera.mediaKind === 'image' ? (
                       <img
-                        src={details.imageUrl}
+                        src={details?.imageUrl ?? camera.mediaUrl}
                         alt={`${camera.name} preview`}
                         className="baharoute-cam-item__img"
                         loading="lazy"

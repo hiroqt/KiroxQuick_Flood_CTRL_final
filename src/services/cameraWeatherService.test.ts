@@ -129,7 +129,7 @@ describe('cameraWeatherService', () => {
       expect(parsed.searchParams.get('current')).toBe(
         'temperature_2m,relative_humidity_2m,weather_code',
       );
-      expect(parsed.searchParams.get('forecast_days')).toBe('1');
+      expect(parsed.searchParams.get('forecast_days')).toBe('0');
       // No extra variables like surface_pressure, hourly, daily, etc.
       expect(parsed.searchParams.get('hourly')).toBeNull();
       expect(parsed.searchParams.get('daily')).toBeNull();
