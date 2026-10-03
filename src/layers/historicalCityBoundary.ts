@@ -7,15 +7,18 @@
 // the historical dataset.
 //
 // These polygons are used for the city OUTER BOUNDARY, city selection, city
-// hover, city focus and fitBounds — they NEVER replace the per-barangay risk
-// fill (each barangay keeps its own historical color). This is a separate
+// hover, city focus and fitBounds. NCR overview colors each city by its derived
+// dominant class; drilling down reveals each barangay's own class. This is a separate
 // source + separate line layers, distinct from the barangay fill/outline.
 
 import { APP_LAYER_SLOT, type MapLayerSpec } from './LayerRegistry';
+import { HISTORICAL_INK, HISTORICAL_RISK_COLORS } from '../map/basemap/colorTokens';
 import rawCityBoundaries from '../data/geojson/ncrCityBoundaries.geojson?raw';
 
 /** GeoJSON source id for the derived city boundaries. */
 export const CITY_BOUNDARY_SOURCE_ID = 'historicalCityBoundary';
+export const CITY_HISTORICAL_FILL_LAYER_ID = 'historicalCityRisk-fill';
+
 /** The base (all-cities) boundary line layer id. */
 export const CITY_BOUNDARY_LAYER_ID = 'historicalCityBoundary-line';
 /** The selected-city emphasized boundary line layer id. */
@@ -42,8 +45,36 @@ export interface CityBoundarySourceSpec {
 export function buildCityBoundarySource(): CityBoundarySourceSpec {
   return {
     type: 'geojson',
-    data: ncrCityBoundaries,
+    data: {
+      type: 'FeatureCollection',
+      features: ncrCityBoundaries.features.map((feature) => ({
+        ...feature,
+        properties: {
+          ...feature.properties,
+          histClass: historicalCitySummaryByPsgc.get(feature.properties?.cityPsgc)
+            ?.dominantHistoricalRiskClass ?? 'Unknown',
+        },
+      })),
+    },
     promoteId: 'cityPsgc',
+  };
+}
+
+/** NCR overview uses the existing, derived dominant class of each LGU. */
+export function buildHistoricalCityFillLayer(): MapLayerSpec {
+  return {
+    id: CITY_HISTORICAL_FILL_LAYER_ID,
+    type: 'fill',
+    slot: APP_LAYER_SLOT,
+    source: CITY_BOUNDARY_SOURCE_ID,
+    paint: {
+      'fill-color': ['match', ['get', 'histClass'],
+        'Low', HISTORICAL_RISK_COLORS.Low.hex,
+        'Moderate', HISTORICAL_RISK_COLORS.Moderate.hex,
+        'High', HISTORICAL_RISK_COLORS.High.hex,
+        HISTORICAL_RISK_COLORS.Unknown.hex],
+      'fill-opacity': ['case', ['==', ['get', 'histClass'], 'Unknown'], 0.3, 0.65],
+    },
   };
 }
 
@@ -62,7 +93,7 @@ export function buildCityBoundaryLayer(
     slot: APP_LAYER_SLOT,
     source: sourceId,
     paint: {
-      'line-color': '#5b4b9e',
+      'line-color': HISTORICAL_INK.cityLine,
       'line-width': ['interpolate', ['linear'], ['zoom'], 9, 0.6, 12, 1, 15, 1.4],
       // Subtle by default; muted further for non-selected cities during focus.
       'line-opacity': ['case', dim, 0.12, 0.4],
@@ -85,7 +116,7 @@ export function buildCityBoundarySelectedLayer(
     slot: APP_LAYER_SLOT,
     source: sourceId,
     paint: {
-      'line-color': '#3f2b96',
+      'line-color': HISTORICAL_INK.line,
       'line-width': ['case', selected, 3.5, 0],
       'line-opacity': ['case', selected, 0.95, 0],
     },
@@ -100,6 +131,7 @@ export interface CityHoverInfo {
   cityPsgc: string;
   cityName: string;
   barangayCount: number;
+  riskClass: import("../data/historical/ncrHistoricalFloodRisk").HistoricalRiskClass;
   point: { x: number; y: number };
 }
 
@@ -141,6 +173,7 @@ export function resolveCityHover(ev: CityLayerEvent): CityHoverInfo | null {
     cityPsgc,
     cityName: summary.cityName,
     barangayCount: summary.barangayCount,
+    riskClass: summary.dominantHistoricalRiskClass,
     point: ev.point ?? { x: 0, y: 0 },
   };
 }
@@ -152,9 +185,13 @@ export function installCityHover(
 ): () => void {
   const onMove = (ev: CityLayerEvent): void => onHover(resolveCityHover(ev));
   const onLeave = (): void => onHover(null);
+  map.on('mousemove', CITY_HISTORICAL_FILL_LAYER_ID, onMove);
+  map.on('mouseleave', CITY_HISTORICAL_FILL_LAYER_ID, onLeave);
   map.on('mousemove', CITY_BOUNDARY_LAYER_ID, onMove);
   map.on('mouseleave', CITY_BOUNDARY_LAYER_ID, onLeave);
   return () => {
+    map.off('mousemove', CITY_HISTORICAL_FILL_LAYER_ID, onMove);
+    map.off('mouseleave', CITY_HISTORICAL_FILL_LAYER_ID, onLeave);
     map.off('mousemove', CITY_BOUNDARY_LAYER_ID, onMove);
     map.off('mouseleave', CITY_BOUNDARY_LAYER_ID, onLeave);
   };
@@ -175,10 +212,16 @@ export function installCityClick(
   };
   const onEnter = (): void => setCursor('pointer');
   const onLeave = (): void => setCursor('');
+  map.on('click', CITY_HISTORICAL_FILL_LAYER_ID, onClick);
+  map.on('mousemove', CITY_HISTORICAL_FILL_LAYER_ID, onEnter);
+  map.on('mouseleave', CITY_HISTORICAL_FILL_LAYER_ID, onLeave);
   map.on('click', CITY_BOUNDARY_LAYER_ID, onClick);
   map.on('mousemove', CITY_BOUNDARY_LAYER_ID, onEnter);
   map.on('mouseleave', CITY_BOUNDARY_LAYER_ID, onLeave);
   return () => {
+    map.off('click', CITY_HISTORICAL_FILL_LAYER_ID, onClick);
+    map.off('mousemove', CITY_HISTORICAL_FILL_LAYER_ID, onEnter);
+    map.off('mouseleave', CITY_HISTORICAL_FILL_LAYER_ID, onLeave);
     map.off('click', CITY_BOUNDARY_LAYER_ID, onClick);
     map.off('mousemove', CITY_BOUNDARY_LAYER_ID, onEnter);
     map.off('mouseleave', CITY_BOUNDARY_LAYER_ID, onLeave);
@@ -202,6 +245,7 @@ export interface CityBoundaryMapAdapter {
 /** Installs the city-boundary source + base line + selected line (once). */
 export function installHistoricalCityBoundary(map: CityBoundaryMapAdapter): void {
   map.addSource(CITY_BOUNDARY_SOURCE_ID, buildCityBoundarySource());
+  map.addLayer(buildHistoricalCityFillLayer());
   map.addLayer(buildCityBoundaryLayer(CITY_BOUNDARY_SOURCE_ID));
   map.addLayer(buildCityBoundarySelectedLayer(CITY_BOUNDARY_SOURCE_ID));
 }

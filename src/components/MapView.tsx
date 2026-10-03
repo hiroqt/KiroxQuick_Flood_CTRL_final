@@ -151,7 +151,6 @@ import {
   installBarangayFloodRisk,
   setSelectedBarangay,
   barangayRiskFillOpacityExpression,
-  barangayRiskFillOpacityDimmedExpression,
   BARANGAY_RISK_SOURCE_ID,
   BARANGAY_RISK_FILL_LAYER_ID,
   type BarangayRiskMapAdapter,
@@ -187,17 +186,6 @@ import type { CommunityReport } from '../types/report';
 import { resolveBarangayForPoint } from '../services/reportResolution';
 import { barangayInfoByPsgc } from '../data/geojson/ncrBarangays';
 import {
-  installAiFloodEvidence,
-  installAiFloodEvidencePopups,
-  updateAiFloodEvidenceSource,
-  type EvidencePopupMap,
-} from '../layers/aiFloodEvidenceLayer';
-import { EvidencePopup, type EvidencePopupProps } from './overlays/EvidencePopup';
-import { GdeltService } from '../services/gdeltService';
-import { buildEvidenceFromArticles, evidenceByBarangay } from '../services/floodEvidenceAgent';
-import { FloodEvidenceStore, activeEvidenceCountFor } from '../services/floodEvidenceStore';
-import { loadConfig } from '../services/env';
-import {
   HistoricalEvidencePopup,
   type HistoricalEvidencePopupProps,
 } from './overlays/HistoricalEvidencePopup';
@@ -209,21 +197,21 @@ import {
   type HistoricalLayerMapAdapter,
   type HistoricalSourceUpdateMap,
 } from '../layers/historicalEvidenceLayer';
+import { installHistoricalEvidenceSelection } from '../layers/historicalEvidenceSelection';
 import { HistoricalEvidencePanel } from './insights/HistoricalEvidencePanel';
 import { historicalFloodEvidence } from '../data/historical/historicalFloodEvidence';
 import {
   FloodInsights,
   type InsightsTab,
   type SheetState,
-  type BarangayWebEvidenceSummary,
 } from './insights/FloodInsights';
 import { HistoricalExplorePanel } from './insights/HistoricalExplorePanel';
 import { historicalRiskByBarangay } from '../data/historical/ncrHistoricalFloodRisk';
 import {
   applyHistoricalRiskStates,
   applyHistoricalFilter,
+  applyHistoricalCityScope,
   historicalFillOpacityExpression,
-  historicalFillOpacityDimmedExpression,
   setSelectedHistoricalBarangay,
   buildHistoricalSource,
   buildHistoricalFillLayer,
@@ -250,6 +238,8 @@ import {
 } from '../layers/historicalFloodRisk';
 import {
   buildCityBoundarySource,
+  buildHistoricalCityFillLayer,
+  CITY_HISTORICAL_FILL_LAYER_ID,
   buildCityBoundaryLayer,
   buildCityBoundarySelectedLayer,
   installCityHover,
@@ -567,14 +557,6 @@ export function MapView({
   const uninstallMarkerImageReloadRef = useRef<(() => void) | null>(null);
   /** Teardown for the historical-evidence image re-registration (style reload). */
   const uninstallHistoricalImageReloadRef = useRef<(() => void) | null>(null);
-  /** Teardown for the AI evidence marker popup. */
-  const uninstallEvidencePopupRef = useRef<(() => void) | null>(null);
-  /** The AI Flood Evidence store (live + demo-when-enabled separation). */
-  const evidenceStoreRef = useRef<FloodEvidenceStore | null>(null);
-  /** The GDELT discovery service (resilient, never throws). */
-  const gdeltServiceRef = useRef<GdeltService | null>(null);
-  /** Poll timer for the GDELT discovery cycle. */
-  const evidencePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   /** Owns the live barangay current-risk pipeline (rainfall â†’ risk â†’ paint). */
   const riskControllerRef = useRef<BarangayRiskController | null>(null);
   const unsubscribeRiskStatusRef = useRef<(() => void) | null>(null);
@@ -582,6 +564,8 @@ export function MapView({
   const unsubscribeReportsRef = useRef<(() => void) | null>(null);
   /** Teardown for the barangay-source-ready reapply listener (sourcedata). */
   const uninstallRiskReapplyRef = useRef<(() => void) | null>(null);
+  /** Teardown for the historical-source-ready reapply listener (sourcedata). */
+  const uninstallHistoricalReapplyRef = useRef<(() => void) | null>(null);
   /** Teardown for the historical hover-tooltip listener. */
   const uninstallHistoricalHoverRef = useRef<(() => void) | null>(null);
   /** Teardown for the city hover-tooltip listener. */
@@ -623,8 +607,7 @@ export function MapView({
     | { kind: 'flood'; props: FloodPopupProps; lngLat: LngLatLike }
     | { kind: 'barangay'; psgc: string; lngLat?: LngLatLike }
     | { kind: 'report'; props: ReportPopupProps; lngLat: LngLatLike }
-    | { kind: 'evidence'; props: EvidencePopupProps; lngLat: LngLatLike }
-    | { kind: 'historical'; props: HistoricalEvidencePopupProps; lngLat?: LngLatLike }
+    | { kind: 'historical'; evidenceId: string; props: HistoricalEvidencePopupProps; lngLat?: LngLatLike }
     | null
   >(null);
   /** Live rainfall/risk status for the compact status pill. */
@@ -657,6 +640,9 @@ export function MapView({
   const [historicalFilter, setHistoricalFilter] = useState<HistoricalFilterState>(
     DEFAULT_HISTORICAL_FILTER,
   );
+  /** Latest historical filter, for the once-bound source-ready reapply. */
+  const historicalFilterRef = useRef(historicalFilter);
+  historicalFilterRef.current = historicalFilter;
   /**
    * Active tab of the unified Flood Insights panel. Remembered across barangay
    * selections so a user who prefers "Historical" keeps it; a barangay click
@@ -669,6 +655,21 @@ export function MapView({
   const [historicalHover, setHistoricalHover] = useState<HistoricalHoverInfo | null>(null);
   /** Hovered city boundary (name/count + cursor point), or null. */
   const [cityHover, setCityHover] = useState<CityHoverInfo | null>(null);
+  const hoverDismissRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const keepHistoricalHover = (): void => {
+    if (hoverDismissRef.current) clearTimeout(hoverDismissRef.current);
+  };
+  const dismissHistoricalHover = (): void => {
+    keepHistoricalHover();
+    hoverDismissRef.current = setTimeout(() => {
+      setHistoricalHover(null);
+      setCityHover(null);
+    }, 250);
+  };
+  useEffect(() => () => {
+    if (hoverDismissRef.current) clearTimeout(hoverDismissRef.current);
+  }, []);
+  const evidenceSelectRef = useRef<(id: string) => void>(() => {});
   /**
    * Bumps whenever the risk controller repaints (poll tick / report added), so
    * an open barangay panel re-derives its props from the latest live data.
@@ -817,10 +818,6 @@ export function MapView({
         uninstallHistoricalImageReloadRef.current();
         uninstallHistoricalImageReloadRef.current = null;
       }
-      if (uninstallEvidencePopupRef.current) {
-        uninstallEvidencePopupRef.current();
-        uninstallEvidencePopupRef.current = null;
-      }
       if (uninstallRotateSyncRef.current) {
         uninstallRotateSyncRef.current();
         uninstallRotateSyncRef.current = null;
@@ -840,6 +837,10 @@ export function MapView({
       if (uninstallRiskReapplyRef.current) {
         uninstallRiskReapplyRef.current();
         uninstallRiskReapplyRef.current = null;
+      }
+      if (uninstallHistoricalReapplyRef.current) {
+        uninstallHistoricalReapplyRef.current();
+        uninstallHistoricalReapplyRef.current = null;
       }
       if (uninstallHistoricalHoverRef.current) {
         uninstallHistoricalHoverRef.current();
@@ -861,12 +862,7 @@ export function MapView({
         riskControllerRef.current.stop();
         riskControllerRef.current = null;
       }
-      if (evidencePollRef.current) {
-        clearInterval(evidencePollRef.current);
-        evidencePollRef.current = null;
-      }
-      evidenceStoreRef.current = null;
-      gdeltServiceRef.current = null;
+
       markerManagerRef.current?.destroy();
       markerManagerRef.current = null;
       cameraMarkerManagerRef.current?.destroy();
@@ -1082,11 +1078,19 @@ export function MapView({
       // install resolves â€” hiding synchronously here would run before the
       // layers exist and leave "Historical Flood Risk" showing on load. All
       // thematic layers start OFF; the user opts in via the layer drawer.
+      // Their companion outlines are added directly (not registry-managed), so
+      // hide those too or the demo city/hazard shapes linger over the map.
       void installCityFloodSummary(map, registry)
-        .then(() => registry.setVisibility('cityFloodSummary', false))
+        .then(() => {
+          registry.setVisibility('cityFloodSummary', false);
+          setLayoutVisibility(map, 'cityFloodSummary-outline', false);
+        })
         .catch(() => undefined);
       void installFloodSusceptibility(map, registry)
-        .then(() => registry.setVisibility('floodSusceptibility', false))
+        .then(() => {
+          registry.setVisibility('floodSusceptibility', false);
+          setLayoutVisibility(map, 'floodSusceptibility-outline', false);
+        })
         .catch(() => undefined);
 
       // HISTORICAL Flood Risk (derived Project NOAH / Phil-LiDAR per-barangay
@@ -1100,12 +1104,14 @@ export function MapView({
         // outline â†’ selected-city boundary â†’ selected-barangay outline.
         const cityAdapter = map as unknown as CityBoundaryMapAdapter;
         cityAdapter.addSource(CITY_BOUNDARY_SOURCE_ID, buildCityBoundarySource());
+        cityAdapter.addLayer(buildHistoricalCityFillLayer());
         cityAdapter.addLayer(buildCityBoundaryLayer(CITY_BOUNDARY_SOURCE_ID));
 
         const brgyAdapter = map as unknown as HistoricalMapAdapter;
         brgyAdapter.addSource(HISTORICAL_RISK_SOURCE_ID, buildHistoricalSource());
         brgyAdapter.addLayer(buildHistoricalFillLayer(HISTORICAL_RISK_SOURCE_ID));
         brgyAdapter.addLayer(buildHistoricalOutlineLayer(HISTORICAL_RISK_SOURCE_ID));
+        applyHistoricalCityScope(map, historicalFilterRef.current);
 
         // Selected-city boundary above barangay fills, below selected barangay.
         cityAdapter.addLayer(buildCityBoundarySelectedLayer(CITY_BOUNDARY_SOURCE_ID));
@@ -1129,7 +1135,43 @@ export function MapView({
         );
         applyCityFocus(map as unknown as CityBoundaryFeatureStateMap, null);
 
+        // Same dropped-feature-state race as the current-risk layer: the
+        // emphasis/city-focus states written above can be lost if the sources
+        // had not parsed yet. Re-apply the LATEST filter once either historical
+        // source reports loaded. (The class color itself is a baked property,
+        // so it never depends on this.)
+        {
+          const evented = map as unknown as {
+            on?: (t: string, l: (e?: unknown) => void) => void;
+            off?: (t: string, l: (e?: unknown) => void) => void;
+          };
+          const histSourcesReady = new Set<string>();
+          const onHistSourceData = (e?: unknown): void => {
+            const ev = e as { sourceId?: string; isSourceLoaded?: boolean } | undefined;
+            if (
+              ev?.sourceId !== HISTORICAL_RISK_SOURCE_ID &&
+              ev?.sourceId !== CITY_BOUNDARY_SOURCE_ID
+            ) {
+              return;
+            }
+            if (ev.isSourceLoaded === false || histSourcesReady.has(ev.sourceId)) return;
+            // Once loaded, feature-state persists; later filter changes are
+            // applied by the filter effect, so reapply only on first load.
+            histSourcesReady.add(ev.sourceId);
+            const f = historicalFilterRef.current;
+            applyHistoricalFilter(map as unknown as HistoricalFeatureStateMap, f);
+            applyCityFocus(
+              map as unknown as CityBoundaryFeatureStateMap,
+              f.view === 'ncr' ? null : f.cityPsgc,
+            );
+          };
+          evented.on?.('sourcedata', onHistSourceData);
+          uninstallHistoricalReapplyRef.current = () =>
+            evented.off?.('sourcedata', onHistSourceData);
+        }
+
         for (const id of [
+          CITY_HISTORICAL_FILL_LAYER_ID,
           CITY_BOUNDARY_LAYER_ID,
           CITY_BOUNDARY_SELECTED_LAYER_ID,
           HISTORICAL_RISK_FILL_LAYER_ID,
@@ -1138,18 +1180,32 @@ export function MapView({
           HISTORICAL_LABEL_LAYER_ID,
           HISTORICAL_LABEL_SELECTED_LAYER_ID,
         ]) {
-          setLayoutVisibility(map, id, false);
+          const filter = historicalFilterRef.current;
+          const overview = filter.view === 'ncr' || !filter.cityPsgc;
+          const enabled = layerVisibilityRef.current.floodSusceptibility === true;
+          const surfaceVisible = id === CITY_HISTORICAL_FILL_LAYER_ID
+            ? overview
+            : id === HISTORICAL_RISK_FILL_LAYER_ID || id === HISTORICAL_RISK_OUTLINE_LAYER_ID
+              ? !overview
+              : true;
+          setLayoutVisibility(map, id, enabled && surfaceVisible);
         }
 
         // Barangay hover tooltip (name / city / historical class).
         uninstallHistoricalHoverRef.current = installHistoricalHover(
           map as unknown as HistoricalHoverMap,
-          (info) => setHistoricalHover(info),
+          (info) => {
+            if (info) { keepHistoricalHover(); setHistoricalHover((previous) => previous?.psgc === info.psgc ? previous : info); setCityHover(null); }
+            else dismissHistoricalHover();
+          },
         );
         // City hover tooltip (city name + barangay count), city mode only.
         uninstallCityHoverRef.current = installCityHover(
           map as unknown as CityHoverMap,
-          (info) => setCityHover(info),
+          (info) => {
+            if (info) { keepHistoricalHover(); setCityHover((previous) => previous?.cityPsgc === info.cityPsgc ? previous : info); setHistoricalHover(null); }
+            else dismissHistoricalHover();
+          },
         );
         // City map-line/polygon click â†’ select that city (city mode).
         uninstallCityClickRef.current = installCityClick(
@@ -1267,6 +1323,13 @@ export function MapView({
             //   both on (or neither) â†’ keep the user's last-selected tab.
             const currentOn = layerVisibilityRef.current.barangayFloodRisk === true;
             const historicalOn = layerVisibilityRef.current.floodSusceptibility === true;
+            // In NCR overview a map tap selects the city, even when the
+            // current-risk surface underneath also receives the same click.
+            if (historicalOn && historicalFilterRef.current.view === 'ncr') {
+              const city = historicalRiskByBarangay.get(psgc)?.cityPsgc;
+              if (city) cityClickHandlerRef.current(city);
+              return;
+            }
             if (currentOn && !historicalOn) setInsightsTab('current');
             else if (historicalOn && !currentOn) setInsightsTab('historical');
             setInsightsSheet('half');
@@ -1344,77 +1407,6 @@ export function MapView({
           // Best-effort.
         }
 
-        // AI Flood Evidence overlay (GDELT discovery). Its own try so a failure
-        // of the evidence agent NEVER breaks the map or the other layers â€” the
-        // app keeps running on rainfall + reports + historical + closures. The
-        // layer starts HIDDEN (opt-in). Demo Mode is read from config; when on,
-        // synthetic evidence is included and badged DEMO. When off, no synthetic
-        // item appears.
-        try {
-          const config = loadConfig();
-          const store = new FloodEvidenceStore(config.demoMode);
-          const gdelt = new GdeltService();
-          evidenceStoreRef.current = store;
-          gdeltServiceRef.current = gdelt;
-
-          installAiFloodEvidence(
-            map as unknown as PointLayerMapAdapter,
-            registry,
-            store.evidence(),
-          );
-          registry.setVisibility('aiFloodEvidence', false);
-
-          // Click popup for evidence markers. Markers only exist for
-          // location-resolved evidence, so this never surfaces a faked point.
-          uninstallEvidencePopupRef.current = installAiFloodEvidencePopups(
-            map as unknown as EvidencePopupMap,
-            (data, lngLat) =>
-              setPopup({
-                kind: 'evidence',
-                props: {
-                  eventType: data.eventType,
-                  confidence: data.confidence,
-                  status: data.status,
-                  synthetic: data.synthetic,
-                  sourceName: data.sourceName,
-                  sourceUrl: data.sourceUrl,
-                  summary: data.summary,
-                  city: data.city,
-                  barangay: data.barangay,
-                  publishedAt: data.publishedAt,
-                },
-                lngLat,
-              }),
-          );
-
-          // Push store changes to the evidence source so the markers refresh.
-          store.subscribe((snap) => {
-            const liveMap = managerRef.current?.getMap?.() ?? null;
-            if (!liveMap) return;
-            updateAiFloodEvidenceSource(
-              liveMap as unknown as PointSourceUpdateMap,
-              snap.evidence,
-            );
-          });
-
-          // One discovery cycle: fetch GDELT, normalize to evidence, update the
-          // store + agent-availability. Never throws (service is fail-safe).
-          const runEvidenceCycle = async (): Promise<void> => {
-            const svc = gdeltServiceRef.current;
-            const st = evidenceStoreRef.current;
-            if (!svc || !st) return;
-            const articles = await svc.ensureFresh();
-            st.setAgentUnavailable(svc.isUnavailable());
-            st.setLiveEvidence(buildEvidenceFromArticles(articles));
-          };
-          void runEvidenceCycle();
-          evidencePollRef.current = setInterval(() => {
-            void runEvidenceCycle();
-          }, 15 * 60 * 1000); // GDELT: every 15 minutes (lightweight).
-        } catch {
-          // Evidence agent is best-effort; the map stays fully usable without it.
-        }
-
         // HISTORICAL Flood Evidence overlay (DEMO / RESEARCH USE ONLY, NOT
         // CURRENT CONDITIONS). Its own try so a failure never affects the map.
         // Installed hidden; the panel toggles it. Context only — it never
@@ -1423,6 +1415,10 @@ export function MapView({
           installHistoricalEvidence(
             map as unknown as HistoricalLayerMapAdapter,
             historicalFloodEvidence,
+          );
+          const uninstallSelection = installHistoricalEvidenceSelection(
+            map as unknown as BarangayPopupMap,
+            (id) => evidenceSelectRef.current(id),
           );
           const styledHist = map as unknown as {
             on?: (t: string, l: () => void) => void;
@@ -1436,8 +1432,10 @@ export function MapView({
             }
           };
           styledHist.on?.('styledata', onHistStyle);
-          uninstallHistoricalImageReloadRef.current = () =>
+          uninstallHistoricalImageReloadRef.current = () => {
+            uninstallSelection();
             styledHist.off?.('styledata', onHistStyle);
+          };
         } catch {
           // Historical overlay is best-effort context; never blocks the map.
         }
@@ -1512,6 +1510,7 @@ export function MapView({
       managerRef.current?.easeTo?.({
         center: [...camera.coordinates],
         zoom: 14,
+        duration: 450,
       });
       cameraMarkerManagerRef.current?.openPopupForCamera(camera);
     },
@@ -1755,19 +1754,10 @@ export function MapView({
   const routePlanningContext = () => {
     const controller = riskControllerRef.current;
     const status = controller?.status();
-    // AI web evidence resolved to barangays (ACTIVE items only). Supporting
-    // context for the route explanation/ranking — never a hard block (only a
-    // confirmed official closure can block). Degrades to 0 when unavailable.
-    const store = evidenceStoreRef.current;
-    const webEvidenceByBarangay = store ? evidenceByBarangay(store.evidence()) : null;
     return {
       riskByBarangay: controller ? (psgc: string) => controller.riskFor(psgc) : undefined,
       reportCountByBarangay: controller
         ? (psgc: string) => controller.reportCountFor(psgc)
-        : undefined,
-      webEvidenceCountByBarangay: webEvidenceByBarangay
-        ? (psgc: string) =>
-            activeEvidenceCountFor(webEvidenceByBarangay.get(psgc) ?? [], psgc)
         : undefined,
       closedBarangays: controller?.closedBarangays(),
       trend: controller?.overallTrend(),
@@ -2531,16 +2521,15 @@ export function MapView({
         setLayout('barangayFloodRisk-outline');
         break;
       case 'floodSusceptibility':
-        // "Historical Flood Risk" now primarily renders the DERIVED per-barangay
-        // Project NOAH / Phil-LiDAR susceptibility layer, plus the legacy
-        // modeled hazard polygons + city summary as supporting context.
-        safeSet('floodSusceptibility');
-        safeSet('cityFloodSummary');
+// Historical risk uses the derived city summaries at NCR scope and
+        // individual barangay classes when drilled down. Legacy demo layers
+        // stay hidden; the scope effect chooses the appropriate surface.
         setLayout(HISTORICAL_RISK_FILL_LAYER_ID);
         setLayout(HISTORICAL_RISK_OUTLINE_LAYER_ID);
         setLayout(HISTORICAL_SELECTED_LAYER_ID);
         setLayout(HISTORICAL_LABEL_LAYER_ID);
         setLayout(HISTORICAL_LABEL_SELECTED_LAYER_ID);
+        setLayout(CITY_HISTORICAL_FILL_LAYER_ID);
         setLayout(CITY_BOUNDARY_LAYER_ID);
         setLayout(CITY_BOUNDARY_SELECTED_LAYER_ID);
         if (visible) {
@@ -2592,36 +2581,24 @@ export function MapView({
       : null;
   // `riskRevision` is intentionally read so the panel re-derives on repaint.
   void riskRevision;
-  // AI web-evidence summary for the selected barangay (presentation-only; kept
-  // SEPARATE from current risk — it never changes the risk class). Derived from
-  // the evidence store at render time so it tracks the latest discovery cycle.
-  const barangayWebEvidence = ((): BarangayWebEvidenceSummary | null => {
-    if (popup?.kind !== 'barangay') return null;
-    const store = evidenceStoreRef.current;
-    if (!store) return null;
-    const snap = store.snapshot();
-    const here = snap.evidence.filter(
-      (e) => e.psgc === popup.psgc && e.status === 'ACTIVE',
-    );
-    const rank: Record<string, number> = { UNVERIFIED: 0, CORROBORATED: 1, OFFICIAL: 2 };
-    let strongest: 'UNVERIFIED' | 'CORROBORATED' | 'OFFICIAL' | null = null;
-    for (const e of here) {
-      if (strongest === null || rank[e.confidence] > rank[strongest]) {
-        strongest = e.confidence;
-      }
-    }
-    return {
-      count: here.length,
-      strongestConfidence: strongest,
-      agentUnavailable: snap.agentUnavailable,
-    };
-  })();
-
   /** Timeline changes update the open panel + map coloring for the step. */
   const handleTimelineStep = (step: TimelineStep): void => {
     setTimelineStep(step);
     riskControllerRef.current?.setTimelineStep?.(step);
   };
+
+  useEffect(() => {
+    const map = managerRef.current?.getMap?.() ?? null;
+    if (!map) return;
+    setHistoricalHover(null);
+    setCityHover(null);
+    applyHistoricalCityScope(map, historicalFilter);
+    const overview = historicalFilter.view === 'ncr' || !historicalFilter.cityPsgc;
+    setLayoutVisibility(map, CITY_HISTORICAL_FILL_LAYER_ID, historicalVisible && overview);
+    for (const id of [HISTORICAL_RISK_FILL_LAYER_ID, HISTORICAL_RISK_OUTLINE_LAYER_ID]) {
+      setLayoutVisibility(map, id, historicalVisible && !overview);
+    }
+  }, [historicalVisible, historicalFilter, phase]);
 
   /**
    * Reapply the historical filter to the map whenever it changes. Writing the
@@ -2648,8 +2625,13 @@ export function MapView({
     //     at NCR overview) AND the active risk filter, so the visible labels
     //     stay consistent with the panel count + fill emphasis.
     applyBarangayLabelScope(map, focusCity, historicalFilter.risk);
+  }, [historicalFilter]);
 
-    // 2) Camera framing: zoom to the selected city / barangay, or back to the
+  // Risk-class changes repaint the layer without interrupting a pan/zoom.
+  useEffect(() => {
+    const map = managerRef.current?.getMap?.() ?? null;
+    if (!map) return;
+    // Camera framing: zoom to the selected city / barangay, or back to the
     //    NCR overview for the NCR view. Bounded padding + maxZoom keeps tiny
     //    barangays from over-zooming and large ones from under-zooming.
     const fit = (map as unknown as {
@@ -2669,7 +2651,21 @@ export function MapView({
     } catch {
       // Camera framing is best-effort; emphasis already applied.
     }
-  }, [historicalFilter]);
+  }, [historicalFilter.view, historicalFilter.cityPsgc, historicalFilter.barangayPsgc]);
+
+  /**
+   * Leaving the Barangay drill-down (breadcrumb back to City or NCR) closes the
+   * open barangay panel, so its highlight/label clear and the city returns to
+   * its normal per-barangay colors.
+   */
+  const prevHistoricalViewRef = useRef(historicalFilter.view);
+  useEffect(() => {
+    const prev = prevHistoricalViewRef.current;
+    prevHistoricalViewRef.current = historicalFilter.view;
+    if (prev === 'barangay' && historicalFilter.view !== 'barangay') {
+      setPopup((p) => (p?.kind === 'barangay' ? null : p));
+    }
+  }, [historicalFilter.view]);
 
   /**
    * Keep the historical layer's SELECTED (strong-outline) barangay in sync with
@@ -2721,7 +2717,11 @@ export function MapView({
     const m = map as { setFilter?: (id: string, filter: unknown) => void };
     if (typeof m.setFilter !== 'function') return;
     try {
-      m.setFilter(HISTORICAL_LABEL_LAYER_ID, cityLabelFilter(cityPsgc, risk));
+      const scope = historicalFilterRef.current;
+      m.setFilter(HISTORICAL_LABEL_LAYER_ID,
+        scope.view === 'barangay' && scope.barangayPsgc
+          ? ['==', ['get', 'psgc'], scope.barangayPsgc]
+          : cityLabelFilter(cityPsgc, risk));
     } catch {
       // Label scoping is best-effort; the fill/hover/click still work.
     }
@@ -2734,6 +2734,8 @@ export function MapView({
    * the Historical layer is visible + the user is in a city-capable view.
    */
   const handleCityMapSelect = (cityPsgc: string): void => {
+    if (!historicalVisible || (historicalFilter.view !== 'ncr' && historicalFilter.cityPsgc)) return;
+    setPopup(null);
     setHistoricalFilter((prev) => ({
       ...prev,
       view: 'city',
@@ -2743,12 +2745,68 @@ export function MapView({
   };
   cityClickHandlerRef.current = handleCityMapSelect;
 
+  const selectHistoricalBarangay = (psgc: string): void => {
+    const record = historicalRiskByBarangay.get(psgc);
+    if (!record) return;
+    keepHistoricalHover();
+    setHistoricalHover(null);
+    setCityHover(null);
+    setHistoricalFilter({ view: 'barangay', cityPsgc: record.cityPsgc, barangayPsgc: psgc, risk: 'all' });
+    setInsightsTab('historical');
+    setInsightsSheet('half');
+    setPopup({ kind: 'barangay', psgc });
+  };
+  const selectHistoricalEvidence = (item: (typeof historicalFloodEvidence)[number]): void => {
+    if (item.coordinates) {
+      const manager = managerRef.current;
+      const map = manager?.getMap?.() as { flyTo?: (options: unknown) => void } | null;
+      const width = containerRef.current?.clientWidth || window.innerWidth;
+      const height = containerRef.current?.clientHeight || window.innerHeight;
+      const desktop = width >= 768;
+      const options = {
+        center: [...item.coordinates],
+        zoom: 15.5,
+        duration: 1000,
+        // Keep the selected point visible beside the panel / above the mobile sheet.
+        offset: desktop
+          ? [Math.min(200, width * 0.2), 0]
+          : [0, -Math.min(160, height * 0.2)],
+      };
+      if (manager?.flyTo) manager.flyTo(options);
+      else map?.flyTo?.(options);
+    }
+    setPopup({
+      kind: 'historical',
+      evidenceId: item.id,
+      props: {
+        title: item.title,
+        city: item.city,
+        eventLabel: item.eventLabel,
+        eventDate: item.eventDate,
+        publicationDate: item.publicationDate,
+        floodCondition: item.floodCondition,
+        reportedDepth: item.reportedDepth,
+        passability: item.passability,
+        sourceName: item.sourceName,
+        sourceUrl: item.sourceUrl,
+        locationPrecision: item.locationPrecision,
+      },
+      lngLat: item.coordinates
+        ? { lng: item.coordinates[0], lat: item.coordinates[1] }
+        : undefined,
+    });
+  };
+  evidenceSelectRef.current = (id) => {
+    const item = historicalFloodEvidence.find((record) => record.id === id);
+    if (item) selectHistoricalEvidence(item);
+  };
+
   /**
    * Visual co-existence when BOTH flood layers are enabled: the historical fill
    * recedes to a faint overlay while the user's focus is Current (a barangay is
-   * open on the Current tab), so the indigo/violet historical fill and the
-   * greenâ†’red current fill never stack into a muddy double-fill. When only
-   * Historical is on â€” or the Historical tab is active â€” it returns to its full
+   * open on the Current tab), so the warm historical fill and the
+   * green→red current fill never stack into a muddy double-fill. When only
+   * Historical is on — or the Historical tab is active — it returns to its full
    * fill. Paint-only; no data/feature-state/classification is touched.
    */
   useEffect(() => {
@@ -2760,25 +2818,28 @@ export function MapView({
     const barangayOpen = popup?.kind === 'barangay';
     // When both layers are on, exactly ONE is the primary fill; the other
     // recedes so the two color families never stack into muddy colors:
-    //   focus Current (default / Current tab) â†’ historical dimmed
-    //   focus Historical (Historical tab open) â†’ current dimmed
-    const historicalIsFocus = bothOn && barangayOpen && insightsTab === 'historical';
-    const dimHistorical = bothOn && !historicalIsFocus;
+    //   focus Current (Current tab) → current keeps its fill
+    //   focus Historical (Historical tab open or Explore) → current fill hidden
+    //   drilled into a city/barangay in the Historical panel with no barangay
+    //   panel open → historical is the focus (its city colors come back)
+    const historicalIsFocus =
+      bothOn &&
+      (barangayOpen ? insightsTab === 'historical' : true);
     const dimCurrent = historicalIsFocus;
 
     setPaint(
       map,
       HISTORICAL_RISK_FILL_LAYER_ID,
       'fill-opacity',
-      dimHistorical ? historicalFillOpacityDimmedExpression() : historicalFillOpacityExpression(),
+      historicalFillOpacityExpression(),
     );
     setPaint(
       map,
       BARANGAY_RISK_FILL_LAYER_ID,
       'fill-opacity',
-      dimCurrent ? barangayRiskFillOpacityDimmedExpression() : barangayRiskFillOpacityExpression(),
+      dimCurrent ? 0 : barangayRiskFillOpacityExpression(),
     );
-  }, [floodRiskVisible, historicalVisible, insightsTab, popup]);
+  }, [floodRiskVisible, historicalVisible, insightsTab, popup, historicalFilter.view]);
 
   return (
     <div className="baharoute-map-view" data-testid="map-view">
@@ -2940,6 +3001,7 @@ export function MapView({
         ) &&
         (floodRiskVisible || historicalVisible) && (
           <MapLegend
+            defaultExpanded={historicalVisible}
             showCurrent={floodRiskVisible}
             showHistorical={historicalVisible}
           />
@@ -3091,23 +3153,25 @@ export function MapView({
           <HistoricalExplorePanel
             filter={historicalFilter}
             onFilterChange={setHistoricalFilter}
-            onOpenBarangay={(psgc) => {
-              setInsightsTab('historical');
-              setInsightsSheet('half');
-              setPopup({ kind: 'barangay', psgc, lngLat: undefined });
-            }}
+            onOpenBarangay={selectHistoricalBarangay}
           />
         </div>
       )}
 
       {/* Historical hover tooltip: barangay name / city / historical class.
           Shown only while the Historical layer is visible and a barangay is
-          hovered; follows the cursor. Non-interactive. */}
+          hovered; stays anchored while hovered and opens historical details when clicked. */}
       {phase === 'ready' && !driving && historicalVisible && historicalHover && (
-        <div
-          className="baharoute-hist-tooltip"
+        <button
+          className="baharoute-hist-tooltip baharoute-focus-ring"
           data-testid="historical-hover-tooltip"
-          role="tooltip"
+          type="button"
+          onMouseEnter={keepHistoricalHover}
+          onMouseLeave={dismissHistoricalHover}
+          onFocus={keepHistoricalHover}
+          onBlur={dismissHistoricalHover}
+          onClick={() => selectHistoricalBarangay(historicalHover.psgc)}
+          aria-label={`View historical details for ${historicalHover.name}`}
           style={{
             left: historicalHover.point.x,
             top: historicalHover.point.y,
@@ -3121,7 +3185,8 @@ export function MapView({
           >
             Historical Flood Susceptibility: {historicalHover.cls}
           </span>
-        </div>
+          <span className="baharoute-hist-tooltip__action">View historical details →</span>
+        </button>
       )}
 
       {/* City hover tooltip (city name + barangay count). Lightweight; shown
@@ -3129,20 +3194,29 @@ export function MapView({
       {phase === 'ready' &&
         !driving &&
         historicalVisible &&
-        historicalFilter.view === 'city' &&
         cityHover &&
         !historicalHover && (
-          <div
-            className="baharoute-hist-tooltip"
+          <button
+            className="baharoute-hist-tooltip baharoute-focus-ring"
             data-testid="city-hover-tooltip"
-            role="tooltip"
+            type="button"
+            onMouseEnter={keepHistoricalHover}
+            onMouseLeave={dismissHistoricalHover}
+            onFocus={keepHistoricalHover}
+            onBlur={dismissHistoricalHover}
+            onClick={() => handleCityMapSelect(cityHover.cityPsgc)}
+            aria-label={`Explore historical risk in ${cityHover.cityName}`}
             style={{ left: cityHover.point.x, top: cityHover.point.y }}
           >
             <span className="baharoute-hist-tooltip__name">{cityHover.cityName}</span>
             <span className="baharoute-hist-tooltip__city">
               {cityHover.barangayCount} barangays
             </span>
-          </div>
+            <span style={{ color: HISTORICAL_RISK_COLORS[cityHover.riskClass].hex }}>
+              {cityHover.riskClass} historical risk (dominant city class)
+            </span>
+            <span className="baharoute-hist-tooltip__action">Explore city →</span>
+          </button>
         )}
 
       {/* When BOTH Flood Risk and Historical are on and live current-risk data
@@ -3182,7 +3256,6 @@ export function MapView({
             tab={insightsTab}
             onTabChange={setInsightsTab}
             current={barangayPanelProps}
-            webEvidence={barangayWebEvidence}
             historical={historicalRiskByBarangay.get(popup.psgc) ?? null}
             timelineStep={timelineStep}
             onTimelineStep={handleTimelineStep}
@@ -3224,6 +3297,7 @@ export function MapView({
             evidence={historicalFloodEvidence}
             onAgentRunChange={setHistoricalAgentRan}
             onClose={() => {
+              setPopup((current) => current?.kind === 'historical' ? null : current);
               setShowHistoricalEvidence(false);
               setHistoricalAgentRan(false);
               setMapMode('route');
@@ -3237,27 +3311,8 @@ export function MapView({
                 );
               }
             }}
-            onSelect={(item) => {
-              setPopup({
-                kind: 'historical',
-                props: {
-                  title: item.title,
-                  city: item.city,
-                  eventLabel: item.eventLabel,
-                  eventDate: item.eventDate,
-                  publicationDate: item.publicationDate,
-                  floodCondition: item.floodCondition,
-                  reportedDepth: item.reportedDepth,
-                  passability: item.passability,
-                  sourceName: item.sourceName,
-                  sourceUrl: item.sourceUrl,
-                  locationPrecision: item.locationPrecision,
-                },
-                lngLat: item.coordinates
-                  ? { lng: item.coordinates[0], lat: item.coordinates[1] }
-                  : undefined,
-              });
-            }}
+            selectedId={popup?.kind === 'historical' ? popup.evidenceId : null}
+            onSelect={selectHistoricalEvidence}
           />
         </div>
       )}
@@ -3278,8 +3333,6 @@ export function MapView({
           </button>
           {popup.kind === 'report' ? (
             <ReportPopup {...popup.props} />
-          ) : popup.kind === 'evidence' ? (
-            <EvidencePopup {...popup.props} />
           ) : popup.kind === 'historical' ? (
             <HistoricalEvidencePopup {...popup.props} />
           ) : (

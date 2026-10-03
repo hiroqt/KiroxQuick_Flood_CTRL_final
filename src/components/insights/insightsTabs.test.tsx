@@ -143,6 +143,26 @@ describe('HistoricalExplorePanel', () => {
     expect(screen.getByTestId('explore-barangay-select')).toBeInTheDocument();
   });
 
+  it('barangay dropdown options carry each barangay class; selection shows a class badge', () => {
+    const rec = historicalRiskRecords.find(
+      (r) => r.name === 'Addition Hills' && r.city.includes('Mandaluyong'),
+    )!;
+    render(
+      <HistoricalExplorePanel
+        filter={withFilter({ view: 'barangay', cityPsgc: rec.cityPsgc, barangayPsgc: rec.psgc })}
+        onFilterChange={vi.fn()}
+      />,
+    );
+    const select = screen.getByTestId('explore-barangay-select');
+    // 27 Mandaluyong barangays + the placeholder option.
+    expect(select.querySelectorAll('option')).toHaveLength(28);
+    const opt = select.querySelector(`option[value="${rec.psgc}"]`)!;
+    expect(opt).toHaveTextContent(`Addition Hills — ${rec.historicalRiskClass}`);
+    expect(screen.getByTestId('explore-barangay-risk')).toHaveTextContent(
+      `Addition Hills: ${rec.historicalRiskClass}`,
+    );
+  });
+
   it('shows the city summary when a city is selected', () => {
     const city = historicalCitySummaries.find((c) => c.highCount > 0)!;
     render(
@@ -227,4 +247,46 @@ describe('HistoricalExplorePanel', () => {
     await userEvent.click(screen.getByTestId('hist-clear-risk'));
     expect(onFilterChange).toHaveBeenCalledWith(expect.objectContaining({ risk: 'all' }));
   });
+});
+
+ it('NCR city risk buttons drill into the selected city without changing the risk filter', async () => {
+   const user = userEvent.setup();
+   const onFilterChange = vi.fn();
+   render(<HistoricalExplorePanel filter={DEFAULT_HISTORICAL_FILTER} onFilterChange={onFilterChange} />);
+   const city = historicalCitySummaries[0];
+   await user.click(screen.getByRole('button', { name: `${city.cityName} ${city.dominantHistoricalRiskClass}` }));
+   expect(onFilterChange).toHaveBeenCalledWith({
+     view: 'city', cityPsgc: city.cityPsgc, barangayPsgc: null, risk: 'all',
+   });
+   expect(screen.getByLabelText('Historical risk colors')).toHaveTextContent('Low risk');
+   expect(screen.getByLabelText('Historical risk colors')).toHaveTextContent('Moderate risk');
+   expect(screen.getByLabelText('Historical risk colors')).toHaveTextContent('High risk');
+ });
+
+it('orders barangay options High, Moderate, Low, Unknown with names sorted within each risk', () => {
+  const riskOrder = ['High', 'Moderate', 'Low', 'Unknown'];
+  const { rerender } = render(<HistoricalExplorePanel
+    filter={{ ...DEFAULT_HISTORICAL_FILTER, view: 'barangay' }} onFilterChange={vi.fn()} />);
+  const readOptions = () => Array.from(
+    (screen.getByTestId('explore-barangay-select') as HTMLSelectElement).options,
+  ).slice(1).map((option) => historicalRiskRecords.find((r) => r.psgc === option.value)!);
+  const records = readOptions();
+  expect(new Set(records.map((r) => r.historicalRiskClass)).size).toBe(4);
+  for (let i = 1; i < records.length; i++) {
+    const previous = records[i - 1];
+    const current = records[i];
+    expect(riskOrder.indexOf(previous.historicalRiskClass)).toBeLessThanOrEqual(
+      riskOrder.indexOf(current.historicalRiskClass),
+    );
+    if (previous.historicalRiskClass === current.historicalRiskClass) {
+      expect(previous.name.localeCompare(current.name, undefined, { numeric: true })).toBeLessThanOrEqual(0);
+    }
+  }
+  const city = historicalCitySummaries.find((c) => c.highCount && c.moderateCount && c.lowCount)!;
+  rerender(<HistoricalExplorePanel filter={{ ...DEFAULT_HISTORICAL_FILTER,
+    view: 'barangay', cityPsgc: city.cityPsgc }} onFilterChange={vi.fn()} />);
+  const scoped = readOptions();
+  expect(scoped.every((r) => r.cityPsgc === city.cityPsgc)).toBe(true);
+  expect(scoped.length).toBe(city.barangayCount);
+  expect(scoped[0].historicalRiskClass).toBe('High');
 });

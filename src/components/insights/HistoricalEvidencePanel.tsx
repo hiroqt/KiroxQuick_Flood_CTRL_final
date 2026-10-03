@@ -11,7 +11,7 @@
 // pure agent helpers. It never touches current flood risk, rainfall, community
 // reports, official closures, or routing.
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type {
   HistoricalFloodEvidence,
   HistoricalLocationPrecision,
@@ -34,6 +34,7 @@ import { HISTORICAL_EVENTS, historicalCities } from '../../data/historical/histo
 export interface HistoricalEvidencePanelProps {
   /** The full historical dataset (15 items). */
   evidence: readonly HistoricalFloodEvidence[];
+  selectedId?: string | null;
   /** Called when the filtered set changes, so the map layer can refresh. */
   onFilteredChange?: (filtered: HistoricalFloodEvidence[]) => void;
   /** Called when a list item is selected (opens its popup / focuses the map). */
@@ -83,6 +84,7 @@ function passabilityTone(p: HistoricalPassability | undefined): 'block' | 'ok' |
 
 export function HistoricalEvidencePanel({
   evidence,
+  selectedId,
   onFilteredChange,
   onSelect,
   onAgentRunChange,
@@ -91,6 +93,11 @@ export function HistoricalEvidencePanel({
 }: HistoricalEvidencePanelProps) {
   const [filter, setFilter] = useState<HistoricalEvidenceFilter>({});
   const [showFlow, setShowFlow] = useState(false);
+  const selectedCardRef = useRef<HTMLButtonElement>(null);
+  const selected = evidence.find((item) => item.id === selectedId);
+  useEffect(() => {
+    selectedCardRef.current?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' });
+  }, [selectedId]);
 
   /** Toggles the agent run; also tells the parent so it can reveal/hide the map markers. */
   const toggleFlow = (): void => {
@@ -142,6 +149,27 @@ export function HistoricalEvidencePanel({
         {HISTORICAL_USE_LABEL} · {HISTORICAL_NOT_CURRENT_LABEL}
       </p>
 
+      {selected && (
+        <div
+          className="baharoute-historical-selection"
+          role="status"
+          data-testid="historical-selected-record"
+        >
+          <span className="baharoute-historical-selection__label">Selected record</span>
+          <strong>{selected.title}</strong>
+          <span>
+            {selected.city ?? 'NCR'} · {selected.eventLabel}
+          </span>
+          <p>
+            {selected.floodCondition || 'Flood condition not specified'}
+            {selected.reportedDepth ? ` · ${selected.reportedDepth}` : ''}
+          </p>
+          <span>
+            {selected.sourceName} · {selected.eventDate || 'Event date not specified'}
+          </span>
+        </div>
+      )}
+
       {/* AI agent workflow card: a short description + the pipeline + the Run
           CTA. Framed as a research agent over PAST records, never live. */}
       <div className="baharoute-hist-agent" data-testid="historical-agent-card">
@@ -149,9 +177,8 @@ export function HistoricalEvidencePanel({
           <span className="baharoute-hist-agent__spark" aria-hidden="true">
             ✦
           </span>
-          AI agent that compiles PAST flood evidence (2009–2024) from government
-          reports and news archives — then places only well-located records on the
-          map.
+          AI agent that compiles PAST flood evidence (2009–2024) from government reports and news
+          archives — then places only well-located records on the map.
         </p>
         <ol className="baharoute-hist-agent__pipeline" aria-hidden="true">
           {WORKFLOW_STEPS.map((step, i) => (
@@ -272,6 +299,8 @@ export function HistoricalEvidencePanel({
               <button
                 type="button"
                 className="baharoute-hist-card baharoute-focus-ring"
+                aria-pressed={item.id === selectedId}
+                ref={item.id === selectedId ? selectedCardRef : undefined}
                 data-testid={`historical-item-${item.id}`}
                 onClick={() => onSelect?.(item)}
               >
@@ -279,6 +308,9 @@ export function HistoricalEvidencePanel({
                   <span className="baharoute-hist-card__title">{item.title}</span>
                   <span className="baharoute-hist-card__year">{item.eventYear}</span>
                 </span>
+                {item.id === selectedId && (
+                  <span className="baharoute-historical-selection__label">Selected record</span>
+                )}
                 <span className="baharoute-hist-card__city">{item.city ?? 'NCR'}</span>
                 <span className="baharoute-hist-card__event">{item.eventLabel}</span>
                 <span className="baharoute-hist-card__pills">

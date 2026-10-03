@@ -3,6 +3,8 @@ import { describe, expect, it, vi } from 'vitest';
 import {
   ncrCityBoundaries,
   buildCityBoundarySource,
+  buildHistoricalCityFillLayer,
+  CITY_HISTORICAL_FILL_LAYER_ID,
   applyCityFocus,
   resolveCityHover,
   cityPsgcFromFeature,
@@ -106,5 +108,32 @@ describe('city hover + click resolution', () => {
     expect(onSelect).toHaveBeenCalledWith(city.cityPsgc);
     teardown();
     expect(handlers.has(`click:${CITY_BOUNDARY_LAYER_ID}`)).toBe(false);
+  });
+});
+
+describe('historical NCR city colors', () => {
+  const city = historicalCitySummaries[0];
+  it('bakes each city’s derived dominant class into the source before first paint', () => {
+    const source = buildCityBoundarySource();
+    for (const city of historicalCitySummaries) {
+      const feature = source.data.features.find((f) => f.properties?.cityPsgc === city.cityPsgc);
+      expect(feature?.properties?.histClass).toBe(city.dominantHistoricalRiskClass);
+    }
+    expect(ncrCityBoundaries.features.every((f) => !('histClass' in f.properties!))).toBe(true);
+  });
+
+  it('city interior clicks select the city and teardown removes the handler', () => {
+    const handlers = new Map<string, (event: unknown) => void>();
+    const map: CityClickMap = {
+      on: (event, layer, handler) => handlers.set(`${event}:${layer}`, handler as (event: unknown) => void),
+      off: (event, layer) => handlers.delete(`${event}:${layer}`),
+    };
+    const select = vi.fn();
+    const cleanup = installCityClick(map, select);
+    handlers.get(`click:${CITY_HISTORICAL_FILL_LAYER_ID}`)!({ features: [{ id: city.cityPsgc }] });
+    expect(select).toHaveBeenCalledWith(city.cityPsgc);
+    cleanup();
+    expect(handlers.size).toBe(0);
+    expect(buildHistoricalCityFillLayer().source).toBe(CITY_BOUNDARY_SOURCE_ID);
   });
 });

@@ -2859,8 +2859,8 @@ body,
   cursor: pointer;
 }
 .baharoute-insights__segmented button[aria-pressed='true'] {
-  background: #3f2b96;
-  border-color: #3f2b96;
+  background: #5a3a32;
+  border-color: #5a3a32;
   color: #fff;
 }
 .baharoute-insights__segmented button:disabled {
@@ -2950,20 +2950,46 @@ body,
 .baharoute-explore {
   display: flex;
   flex-direction: column;
+  min-width: 0;
   gap: 10px;
   color: var(--baharoute-text);
+  overflow-wrap: anywhere;
+}
+.baharoute-explore__header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+}
+/* Keep the explanation inside the scrollable card at every panel width. */
+.baharoute-explore__header .baharoute-info {
+  display: contents;
+}
+.baharoute-explore__header .baharoute-info__trigger {
+  width: var(--baharoute-touch-target);
+  height: var(--baharoute-touch-target);
+  font-size: 14px;
+}
+.baharoute-explore__header .baharoute-info__bubble {
+  position: static;
+  grid-column: 1 / -1;
+  width: auto;
+  min-width: 0;
+  padding: 10px 12px;
+  box-shadow: none;
+  font-size: 13px;
+  line-height: 1.5;
 }
 .baharoute-explore__title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  min-width: 0;
   margin: 0;
   font-size: 16px;
+  line-height: 1.4;
   font-weight: 700;
 }
 .baharoute-explore__controls {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
   gap: 8px 10px;
 }
@@ -2972,6 +2998,9 @@ body,
   color: var(--baharoute-text-muted);
 }
 .baharoute-explore__controls select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
   min-height: var(--baharoute-touch-target);
   padding: 6px 8px;
   border-radius: 8px;
@@ -2997,11 +3026,12 @@ body,
 .baharoute-explore__summary-sub {
   margin: 2px 0 8px;
   font-size: 13px;
+  line-height: 1.5;
   color: var(--baharoute-text-muted);
 }
 .baharoute-explore__counts {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 64px), 1fr));
   gap: 6px;
   margin: 8px 0 0;
 }
@@ -3023,10 +3053,10 @@ body,
   margin-top: 8px;
   min-height: var(--baharoute-touch-target);
   padding: 6px 12px;
-  border: 1px solid #3f2b96;
+  border: 1px solid #5a3a32;
   border-radius: 8px;
   background: var(--baharoute-surface);
-  color: #3f2b96;
+  color: #5a3a32;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -3093,13 +3123,15 @@ body,
   }
 }
 
-/* Historical hover tooltip (barangay name / city / class). Follows the cursor;
-   non-interactive so it never blocks map interaction. */
+/* Historical popup (barangay name / city / class). Anchored to the hovered feature;
+   clickable to open the selected area in the side panel. */
 .baharoute-hist-tooltip {
   position: absolute;
   z-index: 8;
   transform: translate(12px, 12px);
-  pointer-events: none;
+  pointer-events: auto;
+  cursor: pointer;
+  text-align: left;
   display: flex;
   flex-direction: column;
   gap: 1px;
@@ -3232,7 +3264,7 @@ body,
   background: transparent;
   padding: 2px 4px;
   border-radius: 6px;
-  color: #3f2b96;
+  color: #5a3a32;
   font-weight: 600;
   cursor: pointer;
 }
@@ -3244,6 +3276,22 @@ body,
 }
 .baharoute-breadcrumb__sep {
   color: var(--baharoute-text-muted);
+}
+/* Selected-barangay historical class badge (below the Barangay dropdown). */
+.baharoute-explore__brgy-risk {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 2px 0 4px;
+  font-size: 13px;
+}
+.baharoute-explore__brgy-swatch {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 3px;
+  border: 1px solid rgba(0, 0, 0, 0.25);
 }
 .baharoute-explore__mismatch {
   margin: 6px 0;
@@ -3263,10 +3311,10 @@ body,
   margin-top: 6px;
   min-height: 34px;
   padding: 4px 10px;
-  border: 1px solid #3f2b96;
+  border: 1px solid #5a3a32;
   border-radius: 8px;
   background: var(--baharoute-surface);
-  color: #3f2b96;
+  color: #5a3a32;
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
@@ -4184,4 +4232,84 @@ body,
     border-top-width: 4px;
     padding: 14px 16px calc(16px + var(--baharoute-safe-bottom, 0px));
   }
+}
+
+/* Historical colors remain paired with readable risk names at every scope. */
+.baharoute-explore__risk-key {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 130px), 1fr));
+  gap: 10px 12px;
+  margin: 2px 0;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.baharoute-explore__risk-key > span {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+.baharoute-explore__city-list {
+  display: grid;
+  gap: 4px;
+  margin-top: 12px;
+}
+.baharoute-explore__city-risk {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #fff;
+  color: #252525;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+}
+.baharoute-explore__city-risk:hover { background: #f6f4f1; }
+.baharoute-explore__city-risk strong { margin-left: auto; }
+
+.baharoute-hist-tooltip__action {
+  margin-top: 6px;
+  font-weight: 700;
+  color: var(--baharoute-primary, #315caa);
+}
+.baharoute-hist-tooltip:hover {
+  border-color: var(--baharoute-primary, #315caa);
+}
+.baharoute-historical-selection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 14px;
+  margin: 12px 0;
+  border: 1px solid #9b8dcc;
+  border-left: 4px solid #7663b1;
+  border-radius: 10px;
+  background: #f4f1fc;
+  color: #342c50;
+  font-size: 13px;
+}
+.baharoute-historical-selection p { margin: 0; }
+.baharoute-historical-selection__label {
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #64518f;
+}
+.baharoute-hist-card[aria-pressed="true"] {
+  border-color: #7663b1;
+  background: #f4f1fc;
+  box-shadow: inset 4px 0 0 #7663b1;
+}
+/* Bridge the small offset so the popup stays reachable from its map feature. */
+.baharoute-hist-tooltip::before {
+  content: '';
+  position: absolute;
+  inset: -12px 0 0 -12px;
+  z-index: -1;
 }

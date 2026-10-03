@@ -788,3 +788,65 @@ describe('Community Report V2 — report-mode / lifecycle UX (Phase 1 fixes)', (
     expect(screen.queryByTestId('report-mode-banner')).toBeNull();
   });
 });
+
+describe('historical popup to panel integration', () => {
+  it('keeps the popup reachable and opens historical details for its selected barangay', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup();
+    const { historicalRiskRecords } = await import('../data/historical/ncrHistoricalFloodRisk');
+    const { HISTORICAL_RISK_FILL_LAYER_ID } = await import('../layers/historicalFloodRisk');
+    const handlers = new Map<string, (event: unknown) => void>();
+    const map = {
+      addSource: vi.fn(), addLayer: vi.fn(), setLayoutProperty: vi.fn(),
+      getLayer: vi.fn(() => ({})), getSource: vi.fn(() => ({ setData: vi.fn() })),
+      setFeatureState: vi.fn(), setFilter: vi.fn(), setPaintProperty: vi.fn(),
+      hasImage: vi.fn(() => true), addImage: vi.fn(), fitBounds: vi.fn(), flyTo: vi.fn(),
+      on: vi.fn((event: string, layer: unknown, handler?: (event: unknown) => void) => {
+        if (typeof layer === 'string' && handler) handlers.set(`${event}:${layer}`, handler);
+      }),
+      off: vi.fn(),
+    } as unknown as MinimalMap;
+    const { manager, init } = makeFakeManager(map);
+    render(<MapView config={CONFIG} createMapManager={() => manager} />);
+    act(() => initCallbacks(init).onReady());
+    await user.click(screen.getByTestId('layers-button'));
+    await user.click(screen.getByTestId('layer-checkbox-floodSusceptibility'));
+    const record = historicalRiskRecords[0];
+    await user.selectOptions(screen.getByTestId('explore-area-select'), 'city');
+    await user.selectOptions(screen.getByTestId('explore-city-select'), record.cityPsgc);
+    const move = handlers.get(`mousemove:${HISTORICAL_RISK_FILL_LAYER_ID}`);
+    expect(move).toBeDefined();
+    act(() => move!({ features: [{ id: record.psgc }], point: { x: 300, y: 200 } }));
+    const popup = screen.getByTestId('historical-hover-tooltip');
+    expect(popup).toHaveStyle({ left: '300px', top: '200px' });
+    act(() => move!({ features: [{ id: record.psgc }], point: { x: 310, y: 210 } }));
+    expect(popup).toHaveStyle({ left: '300px', top: '200px' });
+    await user.click(popup);
+    expect(screen.getByTestId('insights-barangay')).toHaveTextContent(record.name);
+    expect(screen.getByTestId('historical-tab')).toBeVisible();
+    expect(screen.queryByTestId('historical-hover-tooltip')).toBeNull();
+    // Archive marker clicks reuse the list selection and highlight its card.
+    await user.click(screen.getByTestId('map-mode-historical'));
+    await user.click(screen.getByTestId('historical-flow-toggle'));
+    const { historicalFloodEvidence } = await import('../data/historical/historicalFloodEvidence');
+    const item = historicalFloodEvidence.find((record) => record.coordinates)!;
+    const markerClick = handlers.get('click:historicalEvidence');
+    expect(markerClick).toBeDefined();
+    act(() => markerClick!({ features: [{ properties: { id: item.id } }] }));
+    expect(screen.getByTestId('historical-evidence-popup')).toHaveTextContent(item.title);
+    expect(screen.getByTestId('historical-selected-record')).toHaveTextContent(item.title);
+    expect(screen.getByTestId(`historical-item-${item.id}`)).toHaveAttribute('aria-pressed', 'true');
+    const flyTo = (map as unknown as { flyTo: ReturnType<typeof vi.fn> }).flyTo;
+    expect(flyTo).toHaveBeenLastCalledWith(expect.objectContaining({
+      center: [...item.coordinates!], zoom: 15.5, duration: 1000,
+    }));
+    flyTo.mockClear();
+    // Selecting the same item from the list replays the zoom animation.
+    await user.click(screen.getByTestId(`historical-item-${item.id}`));
+    expect(flyTo).toHaveBeenCalledTimes(1);
+    const unmapped = historicalFloodEvidence.find((record) => !record.coordinates)!;
+    await user.click(screen.getByTestId(`historical-item-${unmapped.id}`));
+    expect(flyTo).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('historical-selected-record')).toHaveTextContent(unmapped.title);
+
+  });
+});
