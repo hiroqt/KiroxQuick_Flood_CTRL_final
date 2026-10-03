@@ -8,12 +8,6 @@ import type { AppConfig } from '../types/config';
  */
 export interface TileEnv {
   readonly VITE_MAPBOX_ACCESS_TOKEN?: string;
-  /**
-   * Opt-in Demo Mode flag. Only the exact string `'true'` enables it, so any
-   * other/missing value leaves demo data OFF. Vite exposes only `VITE_`-prefixed
-   * vars to the client; this holds no secret.
-   */
-  readonly VITE_DEMO_MODE?: string;
 }
 
 /**
@@ -31,13 +25,10 @@ export interface TileEnv {
 export function loadConfig(env: TileEnv = import.meta.env): AppConfig {
   const raw = env.VITE_MAPBOX_ACCESS_TOKEN;
   const tileKey = typeof raw === 'string' ? raw.trim() : '';
-  // Demo Mode is OFF unless explicitly set to the string 'true'. Defensive:
-  // never throws when absent, matching this module's config-incomplete contract.
-  const demoMode = typeof env.VITE_DEMO_MODE === 'string' && env.VITE_DEMO_MODE.trim() === 'true';
 
   if (tileKey.length > 0) {
-    return { tileKey, hasTileKey: true, demoMode };
+    return { tileKey, hasTileKey: true };
   }
 
-  return { hasTileKey: false, demoMode };
+  return { hasTileKey: false };
 }

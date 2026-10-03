@@ -17,7 +17,7 @@ import type { AppConfig } from '../types/config';
 import type { MinimalMap } from '../map/MapManager';
 import type { LocationResult } from '../services/geolocation';
 
-const CONFIG: AppConfig = { tileKey: 'test-key-123', hasTileKey: true, demoMode: false };
+const CONFIG: AppConfig = { tileKey: 'test-key-123', hasTileKey: true };
 
 /**
  * A fake MapManager tracking init/destroy calls and the options it received. It
@@ -223,15 +223,12 @@ describe('MapView', () => {
     expect(recenter).toHaveBeenCalledTimes(1);
   });
 
-  it('does NOT show a demo indicator when Demo Mode is off (live data not implied synthetic)', () => {
-    // The old global badge appeared merely because fixtures were present, which
-    // wrongly implied live rainfall/evidence/reports were synthetic. The demo
-    // indicator is now gated on actual Demo Mode (off by default in tests).
+  it('shows the DemoDataBadge because the fixture layers are demo (Req 15.2)', () => {
     const { manager } = makeFakeManager();
 
     render(<MapView config={CONFIG} createMapManager={() => manager} />);
 
-    expect(screen.queryByTestId('demo-mode-indicator')).not.toBeInTheDocument();
+    expect(screen.getByTestId('demo-data-badge')).toBeInTheDocument();
   });
 
   it('shows the NCR-only coverage badge', () => {
@@ -686,5 +683,74 @@ describe('MapView — location arrow (consent-gated origin + 3D preview + recent
     expect(await screen.findByTestId('trip-notice')).toHaveTextContent(/NCR only/i);
     expect(focusOrigin).not.toHaveBeenCalled();
     expect(screen.getByLabelText('From')).toBeInTheDocument();
+  });
+
+  it('renders cambutton on the right side and opens webcam list on click', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    const { manager } = makeFakeManager();
+    const loadCameraSnapshot = vi.fn().mockResolvedValue({
+      cameras: [
+        {
+          sourceId: 'cam-999',
+          source: 'Windy',
+          name: 'Roxas Blvd - Manila Bay',
+          coordinates: [120.98, 14.58],
+          mediaKind: 'image',
+          mediaUrl: 'https://images.example.test/cam999.jpg',
+          city: { id: 'manila', name: 'Manila' },
+        },
+      ],
+      fetchedAt: 1700000000,
+      stale: false,
+    });
+
+    render(
+      <MapView
+        config={CONFIG}
+        createMapManager={() => manager}
+        loadCameraSnapshot={loadCameraSnapshot}
+      />,
+    );
+
+    const camBtn = screen.getByTestId('cambutton');
+    expect(camBtn).toBeVisible();
+    expect(screen.getByTestId('cam-panel')).not.toBeVisible();
+
+    await user.click(camBtn);
+    expect(screen.getByTestId('cam-panel')).toBeVisible();
+    expect(await screen.findByText('Roxas Blvd - Manila Bay')).toBeVisible();
+  });
+
+  it('toggles controls collapse via the hamburger icon button across mobile and desktop', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    const { manager } = makeFakeManager();
+
+    render(<MapView config={CONFIG} createMapManager={() => manager} />);
+
+    const controls = screen.getByTestId('map-controls');
+    const menuBtn = screen.getByTestId('controls-menu-button');
+
+    expect(menuBtn).toBeVisible();
+    expect(menuBtn).toHaveAttribute('aria-expanded', 'false');
+    expect(menuBtn).toHaveAttribute('aria-label', 'Open map controls');
+    expect(controls).not.toHaveAttribute('data-mobile-open');
+    const controlItems = controls.querySelector('#map-control-items');
+    expect(controlItems).toContainElement(
+      screen.getByRole('button', { name: /recenter map to metro manila/i }),
+    );
+
+    // Click hamburger button to expand controls
+    await user.click(menuBtn);
+    expect(menuBtn).toHaveAttribute('aria-expanded', 'true');
+    expect(menuBtn).toHaveAttribute('aria-label', 'Close map controls');
+    expect(controls).toHaveAttribute('data-mobile-open', 'true');
+
+    // Click again to collapse controls
+    await user.click(menuBtn);
+    expect(menuBtn).toHaveAttribute('aria-expanded', 'false');
+    expect(menuBtn).toHaveAttribute('aria-label', 'Open map controls');
+    expect(controls).not.toHaveAttribute('data-mobile-open');
   });
 });

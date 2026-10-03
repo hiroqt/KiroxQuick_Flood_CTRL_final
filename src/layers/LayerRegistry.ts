@@ -99,7 +99,6 @@ export const APP_LAYER_ORDER = [
   'officialClosures',
   'floodReports',
   'communityReports',
-  'aiFloodEvidence',
   'routeHighlights',
   'roadFloodConditionSegments',
   'barangayFloodRisk',

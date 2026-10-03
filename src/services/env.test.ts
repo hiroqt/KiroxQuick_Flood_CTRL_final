@@ -35,17 +35,4 @@ describe('loadConfig', () => {
     expect(() => loadConfig()).not.toThrow();
     expect(typeof loadConfig().hasTileKey).toBe('boolean');
   });
-
-  it('demoMode defaults to false when VITE_DEMO_MODE is absent', () => {
-    expect(loadConfig({}).demoMode).toBe(false);
-    expect(loadConfig({ VITE_MAPBOX_ACCESS_TOKEN: 'abc' }).demoMode).toBe(false);
-  });
-
-  it('demoMode is true ONLY for the exact string "true"', () => {
-    expect(loadConfig({ VITE_DEMO_MODE: 'true' }).demoMode).toBe(true);
-    expect(loadConfig({ VITE_DEMO_MODE: ' true ' }).demoMode).toBe(true);
-    expect(loadConfig({ VITE_DEMO_MODE: 'TRUE' }).demoMode).toBe(false);
-    expect(loadConfig({ VITE_DEMO_MODE: '1' }).demoMode).toBe(false);
-    expect(loadConfig({ VITE_DEMO_MODE: 'yes' }).demoMode).toBe(false);
-  });
 });

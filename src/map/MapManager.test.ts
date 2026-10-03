@@ -38,7 +38,7 @@ import {
 } from '../camera/overviewFraming';
 import type { AppConfig } from '../types/config';
 
-const CONFIG: AppConfig = { tileKey: 'test-key-123', hasTileKey: true, demoMode: false };
+const CONFIG: AppConfig = { tileKey: 'test-key-123', hasTileKey: true };
 
 /** A fake MinimalMap whose event listeners can be triggered from tests. */
 interface FakeMap extends MinimalMap {
