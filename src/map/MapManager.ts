@@ -213,6 +213,9 @@ export interface MinimalMap {
   addSource?(id: string, source: unknown): unknown;
   addLayer?(layer: unknown, beforeId?: string): unknown;
   getLayer?(id: string): unknown;
+  /** Optional custom-image registry APIs (community-report SVG markers). */
+  addImage?(id: string, image: unknown, options?: unknown): unknown;
+  hasImage?(id: string): boolean;
   /** Optional layout-property setter (used to toggle the outside-NCR mask). */
   setLayoutProperty?(layerId: string, name: string, value: unknown): unknown;
   /** Optional camera pan constraint setter (used by the Map Context switch). */

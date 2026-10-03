@@ -114,6 +114,9 @@ export function aggregateReportsByBarangay(
 
   for (const report of reports) {
     const { state, metadata } = report;
+    // RESOLVED reports are historical observations only — they NEVER escalate
+    // current risk (Community Report V2). Absent lifecycle → treated as ACTIVE.
+    if (report.lifecycle === 'RESOLVED') continue;
     if (state !== 'RED' && state !== 'ORANGE' && state !== 'YELLOW') continue;
     // Decay: skip reports older than the TTL.
     if (now - metadata.updatedAt > REPORT_TTL_SECONDS) continue;

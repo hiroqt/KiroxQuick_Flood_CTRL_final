@@ -754,3 +754,37 @@ describe('MapView — location arrow (consent-gated origin + 3D preview + recent
     expect(controls).not.toHaveAttribute('data-mobile-open');
   });
 });
+
+describe('Community Report V2 — report-mode / lifecycle UX (Phase 1 fixes)', () => {
+  async function enterReportMode() {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    const { manager } = makeFakeManager();
+    render(<MapView config={CONFIG} createMapManager={() => manager} />);
+    const reportBtn = screen.getByRole('button', { name: /report flooding/i });
+    await user.click(reportBtn);
+    return { user };
+  }
+
+  it('entering report mode shows the report-mode banner', async () => {
+    await enterReportMode();
+    expect(screen.getByTestId('report-mode-banner')).toBeInTheDocument();
+  });
+
+  it('no selected-report popup (and no lifecycle actions) are present in report mode', async () => {
+    await enterReportMode();
+    // The selected-report popup host must not be open, so the lifecycle action
+    // buttons (Confirm / Conditions changed / Flood cleared) cannot appear.
+    expect(screen.queryByTestId('map-popup-host')).toBeNull();
+    expect(screen.queryByTestId('report-actions')).toBeNull();
+    expect(screen.queryByTestId('report-action-confirm')).toBeNull();
+    expect(screen.queryByTestId('report-action-resolve')).toBeNull();
+  });
+
+  it('toggling report mode off hides the banner again', async () => {
+    const { user } = await enterReportMode();
+    expect(screen.getByTestId('report-mode-banner')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /report flooding/i }));
+    expect(screen.queryByTestId('report-mode-banner')).toBeNull();
+  });
+});

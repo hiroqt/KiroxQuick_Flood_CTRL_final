@@ -34,6 +34,12 @@ import {
 import type { BarangayInfoPanelProps } from '../components/overlays/BarangayInfoPanel';
 import { baselineSusceptibilityByBarangay } from './baselineSusceptibility';
 import { aggregateReportsByBarangay } from './reportResolution';
+import {
+  confirmReport as confirmReportPure,
+  updateReportConditions as updateReportConditionsPure,
+  resolveReport as resolveReportPure,
+  type ReportConditions,
+} from './reportLifecycle';
 import { dataFreshnessFor } from '../layers/riskLabels';
 import { barangayToGridCell, rainfallGridSamples } from './rainfallGrid';
 
@@ -455,6 +461,74 @@ export class BarangayRiskController {
   /** The current community reports (seed + any added at runtime). */
   communityReports(): readonly CommunityReport[] {
     return this.reports;
+  }
+
+  /** Looks up a single community report by id (or undefined). */
+  reportById(id: string): CommunityReport | undefined {
+    return this.reports.find((r) => r.id === id);
+  }
+
+  /**
+   * Replaces a report by id with a transformed version, then recomputes +
+   * repaints + notifies listeners (same seam as {@link addReport}). The
+   * transform is a pure function returning a NEW report (see reportLifecycle
+   * helpers). No-op when the id is unknown. Shared internals for the V2
+   * confirm / update / resolve actions below.
+   */
+  private replaceReport(
+    id: string,
+    transform: (report: CommunityReport) => CommunityReport,
+  ): CommunityReport | undefined {
+    const idx = this.reports.findIndex((r) => r.id === id);
+    if (idx === -1) return undefined;
+    const next = transform(this.reports[idx]);
+    const copy = this.reports.slice();
+    copy[idx] = next;
+    this.reports = copy;
+    this.recompute();
+    this.paint();
+    this.emitStatus();
+    this.reportsListener?.(this.reports);
+    return next;
+  }
+
+  /**
+   * Confirms an existing community report: increments its confirmationCount and
+   * sets lastConfirmedAt. This strengthens COMMUNITY evidence only — it NEVER
+   * changes verification to official and NEVER creates CONFIRMED_NOT_PASSABLE.
+   * Returns the updated report, or undefined if the id is unknown.
+   */
+  confirmReport(
+    id: string,
+    now: number = Math.floor(Date.now() / 1000),
+  ): CommunityReport | undefined {
+    return this.replaceReport(id, (r) => confirmReportPure(r, now));
+  }
+
+  /**
+   * Updates a report's conditions (severity/depth/passability/note) in place,
+   * keeping the SAME id (no duplicate). Stays UNCONFIRMED + ACTIVE. Returns the
+   * updated report, or undefined if the id is unknown.
+   */
+  updateReportConditions(
+    id: string,
+    conditions: ReportConditions,
+    now: number = Math.floor(Date.now() / 1000),
+  ): CommunityReport | undefined {
+    return this.replaceReport(id, (r) => updateReportConditionsPure(r, conditions, now));
+  }
+
+  /**
+   * Marks a report RESOLVED (flooding cleared). It remains viewable as a
+   * historical community observation but no longer escalates current risk
+   * (enforced in aggregateReportsByBarangay). Returns the updated report, or
+   * undefined if the id is unknown.
+   */
+  resolveReport(
+    id: string,
+    now: number = Math.floor(Date.now() / 1000),
+  ): CommunityReport | undefined {
+    return this.replaceReport(id, (r) => resolveReportPure(r, now));
   }
 
   /**

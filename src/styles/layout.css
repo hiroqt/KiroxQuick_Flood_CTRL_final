@@ -1,5 +1,5 @@
-/*
- * src/styles/layout.css — Responsive layout for BahaRoute (Task 16).
+﻿/*
+ * src/styles/layout.css â€” Responsive layout for BahaRoute (Task 16).
  *
  * Implements the design "Responsive layout strategy" around a single 768px
  * breakpoint (Req 10):
@@ -15,7 +15,7 @@
  *     <meta name="viewport" ... viewport-fit=cover> (present in index.html).
  *
  * Placement is driven by a CSS custom-property token set that SWITCHES at the
- * 768px media query (design → "a CSS custom-property token set switches control
+ * 768px media query (design â†’ "a CSS custom-property token set switches control
  * placement at the 768px media query"). The default (mobile-first) token set
  * anchors to the bottom; the >= 768px media query flips the tokens to the
  * top-right cluster. MapView applies the `.baharoute-controls` class instead of
@@ -48,7 +48,7 @@
   --baharoute-panel-bottom-gap: calc(var(--baharoute-safe-bottom) + 40px);
 
   /*
-   * Control placement tokens — MOBILE defaults.
+   * Control placement tokens â€” MOBILE defaults.
    * Anchor the control cluster to the bottom so it sits within the lower
    * two-thirds of the viewport height (Req 10.1). `top: auto` releases the top
    * edge; `max-height: 66vh` keeps the cluster inside the lower two-thirds.
@@ -113,7 +113,7 @@ body,
 }
 
 /* ----------------------------------------------------------------------------
- * Control cluster — positioned entirely from the placement tokens above, so a
+ * Control cluster â€” positioned entirely from the placement tokens above, so a
  * single media query re-anchors it. On mobile these tokens anchor to the bottom
  * (lower two-thirds); on desktop the media query flips them to top-right.
  * ------------------------------------------------------------------------- */
@@ -337,7 +337,7 @@ body,
 }
 
 /* ----------------------------------------------------------------------------
- * Accessibility hardening — visible focus indicator (Task 17, Req 11.2).
+ * Accessibility hardening â€” visible focus indicator (Task 17, Req 11.2).
  *
  * Every interactive control carries the `.baharoute-focus-ring` class hook. When
  * such a control receives keyboard focus, it renders a clearly visible focus
@@ -358,7 +358,7 @@ body,
  * NOTE: This covers the programmatic + visual foundation only. Full WCAG 2.1 AA
  * conformance (including measured contrast against every real rendered
  * background and behavior with real assistive technology) still requires manual
- * AT review and expert verification (design → Accessibility strategy).
+ * AT review and expert verification (design â†’ Accessibility strategy).
  * ------------------------------------------------------------------------- */
 :root {
   /* Dedicated focus-ring color (Req 11.2). Strong blue, >= 3:1 against the
@@ -369,7 +369,7 @@ body,
   --baharoute-focus-ring-offset: 2px;
 }
 
-/* :focus fallback — always show the ring on focus for engines without
+/* :focus fallback â€” always show the ring on focus for engines without
  * :focus-visible support (and for the test environment). */
 .baharoute-focus-ring:focus {
   outline: var(--baharoute-focus-ring-width) solid
@@ -381,7 +381,7 @@ body,
     var(--baharoute-focus-ring-color);
 }
 
-/* :focus-visible — the preferred path. Suppress the plain-:focus ring for mouse
+/* :focus-visible â€” the preferred path. Suppress the plain-:focus ring for mouse
  * users on engines that support :focus-visible, while keeping it for keyboard
  * focus. */
 .baharoute-focus-ring:focus:not(:focus-visible) {
@@ -1924,7 +1924,7 @@ body,
   }
 }
 
-/* --- Map Context selector (NCR-only ↔ nearby areas) ---------------------- */
+/* --- Map Context selector (NCR-only â†” nearby areas) ---------------------- */
 .baharoute-map-context {
   margin-top: 12px;
   padding-top: 10px;
@@ -1976,7 +1976,7 @@ body,
 }
 
 /* ==========================================================================
- * Trip flow: Search → Compare panels + Driver-Mode route-risk banner.
+ * Trip flow: Search â†’ Compare panels + Driver-Mode route-risk banner.
  * Mobile-first (bottom sheet); desktop (>=768px) becomes a floating left card,
  * mirroring the popup-host pattern so both never overlap the control cluster.
  * ========================================================================== */
@@ -2523,7 +2523,7 @@ body,
   color: var(--baharoute-text-muted);
 }
 
-/* Route-search hint / auto "Finding routes…" status (replaces the old button). */
+/* Route-search hint / auto "Finding routesâ€¦" status (replaces the old button). */
 .baharoute-trip-panel__hint {
   margin: 4px 0 0;
   font-size: 13px;
@@ -3022,7 +3022,7 @@ body,
   .baharoute-insights__grip {
     display: none;
   }
-  /* Desktop ignores the mobile sheet heights — all collapse to the shared
+  /* Desktop ignores the mobile sheet heights â€” all collapse to the shared
    * viewport-aware max-height so the panel never runs off-screen. */
   .baharoute-insights[data-sheet='collapsed'],
   .baharoute-insights[data-sheet='half'],
@@ -3234,4 +3234,394 @@ body,
   font-size: 13px;
   font-weight: 600;
   cursor: pointer;
+}
+
+/* --- Unified flood-evidence summary -------------------------------------- */
+/* An inline demo badge variant (the default .baharoute-demo-badge is absolutely
+   positioned under the brand pill; inside cards we need it to flow with text). */
+.baharoute-demo-badge--inline,
+.baharoute-evidence__label .baharoute-demo-badge {
+  position: static;
+  top: auto;
+  left: auto;
+  display: inline-block;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.baharoute-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--baharoute-surface, #fff);
+  border-radius: var(--baharoute-radius, 12px);
+}
+.baharoute-evidence__title {
+  margin: 0 0 2px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--baharoute-label, #6f6a62);
+}
+.baharoute-evidence__item {
+  padding: 8px 10px;
+  border: 1px solid var(--baharoute-border, #e2ded7);
+  border-radius: 10px;
+  border-left-width: 4px;
+}
+.baharoute-evidence__item[data-origin='LIVE_RAINFALL'] { border-left-color: #2f80ed; }
+.baharoute-evidence__item[data-origin='COMMUNITY_REPORT'] { border-left-color: #ef6c00; }
+.baharoute-evidence__item[data-origin='AI_WEB_EVIDENCE'] { border-left-color: #0d9488; }
+.baharoute-evidence__item[data-origin='HISTORICAL'] { border-left-color: #5c6bc0; }
+.baharoute-evidence__item--demo { border-left-color: #f0b429; background: #fffdf5; }
+.baharoute-evidence__label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--baharoute-label, #6f6a62);
+}
+.baharoute-evidence__value {
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+.baharoute-evidence__qualifier {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #8a8580;
+}
+.baharoute-evidence__demo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* --- Layer control provenance sublabels ---------------------------------- */
+.baharoute-layer-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.2;
+}
+.baharoute-layer-provenance {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #8a8580;
+}
+
+/* --- Demo-mode indicator (replaces the ambiguous global demo badge) ------ */
+/* Shown only when Demo Mode is active. Sits where the old demo badge sat, with
+   a clarifying note so live data is never implied synthetic. */
+.baharoute-demo-mode-indicator {
+  position: absolute;
+  top: calc(var(--baharoute-control-inset) + var(--baharoute-safe-top) + 46px);
+  left: calc(var(--baharoute-control-inset) + var(--baharoute-safe-left));
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+/* The badge inside the indicator flows inline (not absolutely positioned). */
+.baharoute-demo-badge--mode {
+  position: static;
+  top: auto;
+  left: auto;
+}
+.baharoute-demo-mode-indicator__note {
+  font-size: 10px;
+  font-weight: 600;
+  color: #7a4b00;
+  background: #fff4d6cc;
+  border: 1px solid #f0d58a;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+/* --- AI evidence marker popup -------------------------------------------- */
+.baharoute-evidence-popup__location {
+  margin: 6px 0 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+.baharoute-evidence-popup__event {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #0d9488;
+  font-weight: 600;
+}
+.baharoute-evidence-popup__summary {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #4a4640;
+}
+.baharoute-evidence-popup__link {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #0d9488;
+}
+
+/* --- Community Report V2: report form + popup actions -------------------- */
+.baharoute-report-form-host {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--baharoute-control-inset) + var(--baharoute-safe-bottom, 0px) + 12px);
+  transform: translateX(-50%);
+  z-index: 6;
+  width: min(360px, calc(100vw - 24px));
+}
+.baharoute-report-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: var(--baharoute-surface, #fff);
+  border-radius: var(--baharoute-radius, 12px);
+  box-shadow: var(--baharoute-shadow, 0 6px 24px rgba(0, 0, 0, 0.18));
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.baharoute-report-form__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+.baharoute-report-form__subtitle {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #b45309;
+}
+.baharoute-report-form__group {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.baharoute-report-form__legend {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--baharoute-label, #6f6a62);
+  padding: 0 0 4px;
+}
+.baharoute-report-form__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.baharoute-report-form__chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 13px;
+  border: 1px solid var(--baharoute-border, #e2ded7);
+  border-radius: 999px;
+  cursor: pointer;
+  user-select: none;
+}
+.baharoute-report-form__chip--selected {
+  background: #2f80ed;
+  border-color: #2f80ed;
+  color: #fff;
+  font-weight: 600;
+}
+.baharoute-report-form__note-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--baharoute-label, #6f6a62);
+}
+.baharoute-report-form__note {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 8px;
+  font: inherit;
+  border: 1px solid var(--baharoute-border, #e2ded7);
+  border-radius: 8px;
+}
+.baharoute-report-form__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.baharoute-report-form__cancel,
+.baharoute-report-form__submit {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.baharoute-report-form__cancel {
+  background: transparent;
+  border: 1px solid var(--baharoute-border, #e2ded7);
+}
+.baharoute-report-form__submit {
+  background: #b45309;
+  border: 1px solid #b45309;
+  color: #fff;
+}
+
+/* Report popup V2 condition summary + lifecycle action buttons. */
+.baharoute-report-popup__conditions {
+  margin: 4px 0 2px;
+}
+.baharoute-report-popup__depth {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+.baharoute-report-popup__pass {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #4a4640;
+}
+.baharoute-report-popup__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.baharoute-report-popup__action {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--baharoute-border, #e2ded7);
+  border-radius: 8px;
+  background: var(--baharoute-surface, #fff);
+  cursor: pointer;
+}
+.baharoute-report-popup__action--resolve {
+  border-color: #2e7d32;
+  color: #2e7d32;
+}
+
+/* --- Community Report V2 realism: form eyebrow + popup card -------------- */
+.baharoute-report-form__eyebrow {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #b45309;
+}
+
+/* Larger, tap-friendly chips for the mobile-first form. */
+.baharoute-report-form__chip {
+  min-height: 40px;
+  font-size: 14px;
+}
+
+/* Community report popup card hierarchy. */
+.baharoute-report-popup__eyebrow {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #2563eb;
+}
+.baharoute-report-popup--resolved .baharoute-report-popup__eyebrow {
+  color: #6b7280;
+}
+.baharoute-report-popup__headline {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.baharoute-report-popup__pass {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #4a4640;
+}
+.baharoute-report-popup__meta {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--baharoute-text-muted, #6f6a62);
+}
+.baharoute-report-popup__freshness {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--baharoute-text-muted, #6f6a62);
+}
+.baharoute-report-popup__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #9aa0a6;
+  flex: none;
+}
+.baharoute-report-popup__freshness--fresh .baharoute-report-popup__dot {
+  background: #2e7d32;
+}
+.baharoute-report-popup__freshness--aging .baharoute-report-popup__dot {
+  background: #f6c445;
+}
+.baharoute-report-popup__freshness--expired .baharoute-report-popup__dot {
+  background: #9aa0a6;
+}
+.baharoute-report-popup__confirmations {
+  margin: 10px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.baharoute-report-popup__confirmed-time {
+  margin: 1px 0 0;
+  font-size: 12px;
+  color: var(--baharoute-text-muted, #6f6a62);
+}
+.baharoute-report-popup__note-block {
+  margin: 10px 0 0;
+}
+.baharoute-report-popup__note-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--baharoute-text-muted, #6f6a62);
+}
+.baharoute-report-popup__note {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #333;
+}
+.baharoute-report-popup__trust-block {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  background: #eef4ff;
+  border: 1px solid #cfe0ff;
+  border-radius: 8px;
+}
+.baharoute-report-popup__trust {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #2563eb;
+}
+.baharoute-report-popup__trust-sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #3b5bdb;
+}
+.baharoute-report-popup__resolved-note {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--baharoute-text-muted, #6f6a62);
 }

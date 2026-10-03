@@ -1,6 +1,6 @@
-// src/components/MapView.tsx
+﻿// src/components/MapView.tsx
 //
-// React wrapper around MapManager (design → Architecture: "React never touches
+// React wrapper around MapManager (design â†’ Architecture: "React never touches
 // the raw map object directly; MapView mounts a container div and delegates to
 // MapManager"). On mount it creates a MapManager and calls init(); on unmount
 // it calls destroy().
@@ -11,8 +11,8 @@
 //     ErrorMessage ("The map could not load") while keeping the app alive and
 //     interactive (Req 1.6, 18.1).
 //   - It renders the control cluster over the map: ZoomControls (wired to
-//     MapManager.zoomIn/zoomOut), RecenterControl (→ MapManager.recenter),
-//     LocationControl (→ MarkerManager origin marker + MapManager center), and
+//     MapManager.zoomIn/zoomOut), RecenterControl (â†’ MapManager.recenter),
+//     LocationControl (â†’ MarkerManager origin marker + MapManager center), and
 //     LayerControl (listing the DataSource layers, toggling via a
 //     LayerRegistry.setVisibility over the real map).
 //   - On ready, when a REAL map is present, it installs the flood
@@ -21,7 +21,7 @@
 //     FloodPopup. These real-integration paths are guarded so they only run
 //     with a real map (getMap() returning a canvas-capable map) and never break
 //     the injected fake-map tests (jsdom, no WebGL).
-//   - It shows the DemoDataBadge whenever demo/fixture layers are present — in
+//   - It shows the DemoDataBadge whenever demo/fixture layers are present â€” in
 //     Milestone 1 they always are (Req 15.2).
 //
 // Testability: the MapManager is created through an injectable `createMapManager`
@@ -93,7 +93,7 @@ import { FLOOD_STATE_COLORS, HISTORICAL_RISK_COLORS } from '../map/basemap/color
 import { DrivingHud } from './driving/DrivingHud';
 import type { DriveCameraMode, DriveMarker, DriveRadius, DriveUpdate } from '../map/MapManager';
 
-/** The original PITX → MOA route, measured once (reroutes branch off it). */
+/** The original PITX â†’ MOA route, measured once (reroutes branch off it). */
 const BASE_ROUTE = measureRoute(PITX_TO_MOA_ROUTE);
 
 /** Demo hazard dots placed on the route (report colors, labeled in the HUD). */
@@ -164,17 +164,33 @@ import {
   installReportMarkers,
   installReportPopups,
   updateCommunityReportsSource,
+  setCommunityReportsVisibility,
+  reregisterCommunityImages,
   COMMUNITY_REPORTS_LAYER_ID,
   type PointLayerMapAdapter,
   type PointSourceUpdateMap,
   type ReportPopupMap,
+  type ReportPopupData,
 } from '../layers/reportMarkersLayer';
 import {
   installCityContext,
   type CityContextMapAdapter,
 } from '../layers/cityContextLayer';
 import { ReportPopup, type ReportPopupProps } from './overlays/ReportPopup';
-import { FloodInsights, type InsightsTab, type SheetState } from './insights/FloodInsights';
+import { ReportForm } from './overlays/ReportForm';
+import {
+  buildCommunityReport,
+  type ReportConditions,
+} from '../services/reportLifecycle';
+import type { CommunityReport } from '../types/report';
+import { resolveBarangayForPoint } from '../services/reportResolution';
+import { barangayInfoByPsgc } from '../data/geojson/ncrBarangays';
+import {
+  FloodInsights,
+  type InsightsTab,
+  type SheetState,
+  type BarangayWebEvidenceSummary,
+} from './insights/FloodInsights';
 import { HistoricalExplorePanel } from './insights/HistoricalExplorePanel';
 import { historicalRiskByBarangay } from '../data/historical/ncrHistoricalFloodRisk';
 import {
@@ -237,7 +253,6 @@ import {
   type PrimaryLeftPanel,
 } from './primaryLeftPanel';
 import type { TimelineStep } from '../types/risk';
-import type { CommunityReport } from '../types/report';
 import {
   communityReportFixtures,
   COMMUNITY_REPORTS_DEMO_SOURCE,
@@ -282,7 +297,7 @@ function logDriveFrame(
 
 /**
  * A thin, persistent Driver-Mode banner summarizing the CHOSEN route's flood
- * risk plus data freshness ("Route risk: Elevated · Updated 3 minutes ago").
+ * risk plus data freshness ("Route risk: Elevated Â· Updated 3 minutes ago").
  * It is intentionally minimal (not a modal) and uses a cached snapshot of the
  * route's aggregate risk captured at Start, so GPS movement does not re-query
  * the environment. Freshness comes from the shared risk-controller status.
@@ -307,7 +322,7 @@ function DriveRiskBanner({
     <div className="baharoute-drive-risk" role="status" data-testid="drive-risk-banner">
       <span className="baharoute-drive-risk__label">Route risk: {riskText}</span>
       <span className="baharoute-drive-risk__sep" aria-hidden="true">
-        ·
+        Â·
       </span>
       <span className="baharoute-drive-risk__freshness">{freshness}</span>
     </div>
@@ -333,7 +348,7 @@ export interface MapManagerLike {
   recenter?: (durationMs?: number) => void;
   /** Switches the 2D/3D view (tilt + Standard 3D buildings). */
   set3D?: (on: boolean) => void;
-  /** Switches the Map Context presentation (NCR-only ↔ nearby areas). */
+  /** Switches the Map Context presentation (NCR-only â†” nearby areas). */
   setMapContext?: (context: MapContext) => void;
   /** Rotates the map by a signed degree delta (positive = clockwise). */
   rotateBy?: (deltaDeg: number, durationMs?: number) => void;
@@ -360,7 +375,7 @@ export interface MapManagerLike {
     routes: ReadonlyArray<{ id: string; geometry: ReadonlyArray<[number, number]> }>,
     selectedId: string,
   ) => void;
-  /** Binds a click on alternative route lines → route id; returns teardown. */
+  /** Binds a click on alternative route lines â†’ route id; returns teardown. */
   onRoutePreviewSelect?: (onSelect: (routeId: string) => void) => () => void;
   /** Removes the route-preview overlays. */
   clearRoutePreview?: () => void;
@@ -486,7 +501,7 @@ function setLayoutVisibility(
 /**
  * Sets a raw Mapbox PAINT property on a layer, guarded so a missing layer/map
  * is a safe no-op. Used only for visual co-existence when both flood layers are
- * on (dim the historical fill) — it never changes data or feature-state.
+ * on (dim the historical fill) â€” it never changes data or feature-state.
  */
 function setPaint(map: unknown, layerId: string, name: string, value: unknown): void {
   try {
@@ -522,7 +537,11 @@ export function MapView({
   const uninstallCityPopupRef = useRef<(() => void) | null>(null);
   const uninstallBarangayPopupRef = useRef<(() => void) | null>(null);
   const uninstallReportPopupRef = useRef<(() => void) | null>(null);
-  /** Owns the live barangay current-risk pipeline (rainfall → risk → paint). */
+  /** Teardown for the community-marker image re-registration (style reload). */
+  const uninstallMarkerImageReloadRef = useRef<(() => void) | null>(null);
+  /** Teardown for the AI evidence marker popup. */
+  const uninstallEvidencePopupRef = useRef<(() => void) | null>(null);
+  /** Owns the live barangay current-risk pipeline (rainfall â†’ risk â†’ paint). */
   const riskControllerRef = useRef<BarangayRiskController | null>(null);
   const unsubscribeRiskStatusRef = useRef<(() => void) | null>(null);
   /** Teardown for the community-report change listener (marker refresh). */
@@ -581,7 +600,7 @@ export function MapView({
    * load (only the Mapbox base map shows). This React state drives legend and
    * warning visibility; `layerVisibilityRef` mirrors it for the once-only mount
    * effect (click-priority) which cannot read state directly. Kept for the
-   * browser session — toggling the layer drawer does not reset it.
+   * browser session â€” toggling the layer drawer does not reset it.
    */
   const [layerVisible, setLayerVisible] = useState<Record<
     'barangayFloodRisk' | 'communityReports' | 'officialClosures' | 'floodSusceptibility',
@@ -623,7 +642,7 @@ export function MapView({
    * Map Context presentation mode. Defaults to "nearby" (surrounding areas
    * shown for orientation); thematic data stays NCR-only regardless. Preserved
    * for the browser session; switching it never resets flood-layer selections
-   * and never touches rainfall/risk state — it only re-styles the basemap
+   * and never touches rainfall/risk state â€” it only re-styles the basemap
    * presentation.
    */
   const [mapContext, setMapContext] = useState<MapContext>('nearby');
@@ -753,6 +772,14 @@ export function MapView({
       if (uninstallReportPopupRef.current) {
         uninstallReportPopupRef.current();
         uninstallReportPopupRef.current = null;
+      }
+      if (uninstallMarkerImageReloadRef.current) {
+        uninstallMarkerImageReloadRef.current();
+        uninstallMarkerImageReloadRef.current = null;
+      }
+      if (uninstallEvidencePopupRef.current) {
+        uninstallEvidencePopupRef.current();
+        uninstallEvidencePopupRef.current = null;
       }
       if (uninstallRotateSyncRef.current) {
         uninstallRotateSyncRef.current();
@@ -1003,10 +1030,10 @@ export function MapView({
       // reports/routes; the LayerRegistry enforces that z-order regardless of
       // install order. It renders by default so flood awareness is visible in
       // OVERVIEW (Req 5). This is a modeled/historical summary, not current
-      // flooding — labeling + popup make that explicit.
+      // flooding â€” labeling + popup make that explicit.
       // These installs are ASYNC (they load fixtures then add layers). Their
       // layers are added visible by default, so we must hide them AFTER the
-      // install resolves — hiding synchronously here would run before the
+      // install resolves â€” hiding synchronously here would run before the
       // layers exist and leave "Historical Flood Risk" showing on load. All
       // thematic layers start OFF; the user opts in via the layer drawer.
       void installCityFloodSummary(map, registry)
@@ -1022,9 +1049,9 @@ export function MapView({
       // Flood Risk" layer toggle reveals it. Kept fully INDEPENDENT of the
       // current-risk layer/state.
       try {
-        // Install in a deliberate BOTTOM→TOP order so the polygon hierarchy
-        // holds (spec #8): city base boundary → barangay fill → barangay
-        // outline → selected-city boundary → selected-barangay outline.
+        // Install in a deliberate BOTTOMâ†’TOP order so the polygon hierarchy
+        // holds (spec #8): city base boundary â†’ barangay fill â†’ barangay
+        // outline â†’ selected-city boundary â†’ selected-barangay outline.
         const cityAdapter = map as unknown as CityBoundaryMapAdapter;
         cityAdapter.addSource(CITY_BOUNDARY_SOURCE_ID, buildCityBoundarySource());
         cityAdapter.addLayer(buildCityBoundaryLayer(CITY_BOUNDARY_SOURCE_ID));
@@ -1078,7 +1105,7 @@ export function MapView({
           map as unknown as CityHoverMap,
           (info) => setCityHover(info),
         );
-        // City map-line/polygon click → select that city (city mode).
+        // City map-line/polygon click â†’ select that city (city mode).
         uninstallCityClickRef.current = installCityClick(
           map as unknown as CityClickMap,
           (cityPsgc) => cityClickHandlerRef.current(cityPsgc),
@@ -1089,7 +1116,7 @@ export function MapView({
 
       // Historical popups DEFER to the current-risk panel: they only open when
       // Current Flood Risk is not the active context (its layer is hidden). This
-      // enforces the interaction priority regardless of Mapbox handler order —
+      // enforces the interaction priority regardless of Mapbox handler order â€”
       // the current-risk handler always wins while its layer is visible.
       const historicalIsActiveContext = (): boolean =>
         layerVisibilityRef.current.barangayFloodRisk !== true;
@@ -1115,7 +1142,7 @@ export function MapView({
       // own try so a failure here never breaks the baseline layers above.
       try {
         installBarangayFloodRisk(map as unknown as BarangayRiskMapAdapter, registry);
-        // ALL thematic layers start hidden on initial load — only the base map
+        // ALL thematic layers start hidden on initial load â€” only the base map
         // shows until the user enables a layer. The barangay-risk fill + its
         // outline start off too (the current-risk fill is added visible by the
         // registry, so hide it explicitly here).
@@ -1152,7 +1179,7 @@ export function MapView({
         // FIX (current-risk race): feature-state written before the barangay
         // GeoJSON source has parsed its features is SILENTLY DROPPED by Mapbox,
         // so the controller's early paints (on attach + first poll) can be lost
-        // and the fill renders the invisible UNKNOWN fallback — the "Live —
+        // and the fill renders the invisible UNKNOWN fallback â€” the "Live â€”
         // updated Just now but no colors" symptom. Re-apply the latest risk
         // snapshot whenever the barangay source (re)loads and once the map goes
         // idle, so the states land as soon as the features exist. Cheap and
@@ -1190,19 +1217,19 @@ export function MapView({
           (psgc) => (controller.infoFor(psgc) ? psgc : null),
           (psgc, lngLat) => {
             // Default the Flood Insights tab from the active layer(s):
-            //   only Current on  → Current; only Historical on → Historical;
-            //   both on (or neither) → keep the user's last-selected tab.
+            //   only Current on  â†’ Current; only Historical on â†’ Historical;
+            //   both on (or neither) â†’ keep the user's last-selected tab.
             const currentOn = layerVisibilityRef.current.barangayFloodRisk === true;
             const historicalOn = layerVisibilityRef.current.floodSusceptibility === true;
             if (currentOn && !historicalOn) setInsightsTab('current');
             else if (historicalOn && !currentOn) setInsightsTab('historical');
             setInsightsSheet('half');
             setPopup({ kind: 'barangay', psgc, lngLat });
-            // MAP → DROPDOWN sync: when the Historical layer is the active
+            // MAP â†’ DROPDOWN sync: when the Historical layer is the active
             // context, clicking a barangay drills the Historical filter to that
             // barangay so the Explore panel's Barangay dropdown follows the map
             // (and the selected-barangay highlight stays in agreement). Data,
-            // classification and PSGC mapping are untouched — this only moves
+            // classification and PSGC mapping are untouched â€” this only moves
             // the filter selection.
             if (historicalOn) {
               const rec = historicalRiskByBarangay.get(psgc);
@@ -1244,17 +1271,103 @@ export function MapView({
           (data, lngLat) =>
             setPopup({
               kind: 'report',
-              props: {
-                kind: data.kind,
-                state: data.state,
-                barangay: data.barangay,
-                note: data.note,
-                updatedAt: data.updatedAt,
-                source: data.source,
-              },
+              props: buildReportPopupProps(data),
               lngLat,
             }),
         );
+
+        // STYLE-RELOAD SAFETY: Mapbox drops custom images on a full style
+        // reload, which would blank the community pins. Re-register them on
+        // styledata/style.load (hasImage-guarded, so it never throws a
+        // duplicate-image error). Best-effort; teardown removes the listener.
+        try {
+          const styled = map as unknown as {
+            on?: (t: string, l: () => void) => void;
+            off?: (t: string, l: () => void) => void;
+          };
+          const onStyle = (): void => {
+            try {
+              reregisterCommunityImages(map as unknown as PointLayerMapAdapter);
+            } catch {
+              // Images re-register best-effort; a failure never breaks the map.
+            }
+          };
+          styled.on?.('styledata', onStyle);
+          uninstallMarkerImageReloadRef.current = () => styled.off?.('styledata', onStyle);
+        } catch {
+          // Best-effort.
+        }
+
+        // AI Flood Evidence overlay (GDELT discovery). Its own try so a failure
+        // of the evidence agent NEVER breaks the map or the other layers â€” the
+        // app keeps running on rainfall + reports + historical + closures. The
+        // layer starts HIDDEN (opt-in). Demo Mode is read from config; when on,
+        // synthetic evidence is included and badged DEMO. When off, no synthetic
+        // item appears.
+        try {
+          const config = loadConfig();
+          const store = new FloodEvidenceStore(config.demoMode);
+          const gdelt = new GdeltService();
+          evidenceStoreRef.current = store;
+          gdeltServiceRef.current = gdelt;
+
+          installAiFloodEvidence(
+            map as unknown as PointLayerMapAdapter,
+            registry,
+            store.evidence(),
+          );
+          registry.setVisibility('aiFloodEvidence', false);
+
+          // Click popup for evidence markers. Markers only exist for
+          // location-resolved evidence, so this never surfaces a faked point.
+          uninstallEvidencePopupRef.current = installAiFloodEvidencePopups(
+            map as unknown as EvidencePopupMap,
+            (data, lngLat) =>
+              setPopup({
+                kind: 'evidence',
+                props: {
+                  eventType: data.eventType,
+                  confidence: data.confidence,
+                  status: data.status,
+                  synthetic: data.synthetic,
+                  sourceName: data.sourceName,
+                  sourceUrl: data.sourceUrl,
+                  summary: data.summary,
+                  city: data.city,
+                  barangay: data.barangay,
+                  publishedAt: data.publishedAt,
+                },
+                lngLat,
+              }),
+          );
+
+          // Push store changes to the evidence source so the markers refresh.
+          store.subscribe((snap) => {
+            const liveMap = managerRef.current?.getMap?.() ?? null;
+            if (!liveMap) return;
+            updateAiFloodEvidenceSource(
+              liveMap as unknown as PointSourceUpdateMap,
+              snap.evidence,
+            );
+          });
+
+          // One discovery cycle: fetch GDELT, normalize to evidence, update the
+          // store + agent-availability. Never throws (service is fail-safe).
+          const runEvidenceCycle = async (): Promise<void> => {
+            const svc = gdeltServiceRef.current;
+            const st = evidenceStoreRef.current;
+            if (!svc || !st) return;
+            const articles = await svc.ensureFresh();
+            st.setAgentUnavailable(svc.isUnavailable());
+            st.setLiveEvidence(buildEvidenceFromArticles(articles));
+          };
+          void runEvidenceCycle();
+          evidencePollRef.current = setInterval(() => {
+            void runEvidenceCycle();
+          }, 15 * 60 * 1000); // GDELT: every 15 minutes (lightweight).
+        } catch {
+          // Evidence agent is best-effort; the map stays fully usable without it.
+        }
       } catch {
         // Barangay integration is best-effort; the rest of the map stays usable.
       }
@@ -1352,7 +1465,7 @@ export function MapView({
   };
 
   /**
-   * Switches the MAP CONTEXT presentation (NCR-only ↔ nearby areas). Purely a
+   * Switches the MAP CONTEXT presentation (NCR-only â†” nearby areas). Purely a
    * basemap-presentation change routed to MapManager.setMapContext; it does NOT
    * touch flood-layer selections, rainfall, or risk state. Preserved in React
    * state for the session so it survives drawer open/close.
@@ -1363,7 +1476,7 @@ export function MapView({
     managerRef.current?.setMapContext?.(next);
   };
 
-  // Trip flow: Search → Compare → Navigate. The commuter first plans a trip
+  // Trip flow: Search â†’ Compare â†’ Navigate. The commuter first plans a trip
   // (origin/destination), compares flood-aware routes, then presses Start to
   // enter Driver Mode. Driver Mode is NEVER the first interaction and there is
   // no standalone Play button.
@@ -1391,6 +1504,19 @@ export function MapView({
   const [reportPickActive, setReportPickActive] = useState(false);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const reportPickActiveRef = useRef(false);
+  /**
+   * The map point the user tapped in report mode, awaiting the report FORM
+   * (Community Report V2). Null when no report is being composed. When set, the
+   * ReportForm is shown; submitting it creates the UNCONFIRMED community report.
+   */
+  const [pendingReportPoint, setPendingReportPoint] = useState<{ lng: number; lat: number } | null>(
+    null,
+  );
+  /**
+   * The id of a community report whose conditions the user is editing
+   * ("Conditions changed"). Null when not editing. Reuses the ReportForm.
+   */
+  const [conditionsEditId, setConditionsEditId] = useState<string | null>(null);
   /** A transient trip-flow notice (e.g. out-of-NCR tap/location). */
   const [tripNotice, setTripNotice] = useState<string | null>(null);
   /** True while route geometry is being fetched (disables Find routes). */
@@ -1398,7 +1524,7 @@ export function MapView({
   /**
    * Device-location permission state. PRIVACY-FIRST: starts 'notRequested' and
    * only advances after the user explicitly consents in the BahaRoute dialog.
-   * Held as runtime/session state only — never persisted, and precise
+   * Held as runtime/session state only â€” never persisted, and precise
    * coordinates are never written to storage or logged.
    */
   const [locationStatus, setLocationStatus] = useState<LocationStatus>('notRequested');
@@ -1439,7 +1565,7 @@ export function MapView({
   const activeReroutesRef = useRef<ReadonlyArray<FloodReroute>>([]);
   /**
    * Measured geometry of the ACTIVE route's ORIGINAL line (reroutes branch off
-   * it). For the PITX→MOA demo this is BASE_ROUTE; for other routes it is that
+   * it). For the PITXâ†’MOA demo this is BASE_ROUTE; for other routes it is that
    * route's own measurement (no reroutes offered).
    */
   const activeBaseRouteRef = useRef<MeasuredRoute>(BASE_ROUTE);
@@ -1528,7 +1654,7 @@ export function MapView({
     simulator.start(fromM);
   };
 
-  // ---- Trip flow (Search → Compare → Start) ------------------------------
+  // ---- Trip flow (Search â†’ Compare â†’ Start) ------------------------------
 
   /** Builds the live route-planning context from the risk controller. */
   const routePlanningContext = () => {
@@ -1565,7 +1691,7 @@ export function MapView({
   /**
    * Plans routes for the given O/D + travel MODE, compares them with the current
    * live flood context + PREFERENCE, updates the cards, selects the recommended
-   * route (unless a manual selection should be preserved — handled by callers),
+   * route (unless a manual selection should be preserved â€” handled by callers),
    * and draws the map preview. Shared by initial search, mode change, and
    * preference change. Never fabricates routes: it shows only what the provider
    * returns. Flood-data unavailability does NOT prevent routes from showing.
@@ -1611,7 +1737,7 @@ export function MapView({
 
   /**
    * Travel-mode change (Drive/Bike/Walk): recalculates routes for the new mode
-   * (fresh geometry — never reused across modes), clears any manual selection,
+   * (fresh geometry â€” never reused across modes), clears any manual selection,
    * and selects the newly recommended route.
    */
   const handleModeChange = (mode: TravelMode): void => {
@@ -1627,7 +1753,7 @@ export function MapView({
   };
 
   /**
-   * Route-preference change (Lower flood exposure ↔ Faster): RERANKS the
+   * Route-preference change (Lower flood exposure â†” Faster): RERANKS the
    * existing provider routes (no new fetch, geometry unchanged) and updates the
    * Recommended badge. Preserves an explicit manual selection; otherwise auto-
    * selects the new recommended route.
@@ -1680,7 +1806,7 @@ export function MapView({
    * Applies a normalized ORIGIN and drives the "Origin 3D Preview" camera state.
    * All three inputs (device / search / map) funnel through here so downstream
    * logic never cares which produced it. Places the origin marker and smoothly
-   * focuses the origin in 3D (a preview — NOT Driver Mode). If a destination
+   * focuses the origin in 3D (a preview â€” NOT Driver Mode). If a destination
    * already exists, both points are framed instead.
    */
   const applyOrigin = (endpoint: TripEndpoint): void => {
@@ -1765,13 +1891,20 @@ export function MapView({
       setPickTarget(null);
       pickTargetRef.current = null;
       setTripNotice(null);
+      // ROOT-CAUSE FIX (#1/#6): entering report mode CLOSES any selected-report
+      // popup and clears any pending compose state, so the lifecycle action
+      // buttons (Confirm/Conditions changed/Flood cleared) can never linger
+      // behind the report form. These overlays are mutually exclusive by state.
+      setPopup(null);
+      setPendingReportPoint(null);
+      setConditionsEditId(null);
     }
   };
 
   /**
    * Submits a user-reported, UNCONFIRMED community flood report at the tapped
    * point. NCR-gated. The report is ALWAYS UNCONFIRMED and carries the demo
-   * community source — a user submission can never be verified or official, and
+   * community source â€” a user submission can never be verified or official, and
    * (via the risk model) can at most escalate a barangay to REPORTED_FLOODING,
    * NEVER CONFIRMED_NOT_PASSABLE. Reuses the controller's addReport (which
    * recomputes risk + report count) and the marker-refresh listener.
@@ -1781,37 +1914,166 @@ export function MapView({
       setTripNotice(UNSUPPORTED_AREA_MESSAGE);
       return;
     }
+    // Community Report V2: a tap no longer creates a hardcoded report. It opens
+    // the report FORM for this point; submitting the form creates the report.
+    // Clear any selected-report popup + conditions edit so the new-report form
+    // is the ONLY report overlay on screen (root-cause fix for #1/#6).
+    setReportPickActive(false);
+    reportPickActiveRef.current = false;
+    setPopup(null);
+    setConditionsEditId(null);
+    setPendingReportPoint({ lng, lat });
+  };
+
+  /**
+   * Creates an UNCONFIRMED community report from the pending point + the form's
+   * structured conditions, then reveals the community-reports layer. The report
+   * can at most escalate a barangay to REPORTED_FLOODING, NEVER
+   * CONFIRMED_NOT_PASSABLE (official-only). Reuses addReport + the marker-refresh
+   * listener. (Community Report V2 Phase 1.)
+   */
+  const handleReportFormSubmit = (conditions: ReportConditions): void => {
+    const point = pendingReportPoint;
     const controller = riskControllerRef.current;
-    if (!controller) return;
+    if (!point || !controller) {
+      setPendingReportPoint(null);
+      return;
+    }
     const now = Math.floor(Date.now() / 1000);
-    const report: CommunityReport = {
-      id: `user-report-${now}-${Math.round(lng * 1e4)}-${Math.round(lat * 1e4)}`,
-      state: 'ORANGE',
-      passable: false,
-      metadata: {
-        location: { lng, lat },
-        source: COMMUNITY_REPORTS_DEMO_SOURCE,
-        dataType: 'COMMUNITY_REPORT',
-        updatedAt: now,
-        verificationStatus: 'UNCONFIRMED',
-        description:
-          'User-submitted community report of flooding. Unverified / not authoritative.',
-      },
-    };
+    const id = `user-report-${now}-${Math.round(point.lng * 1e4)}-${Math.round(point.lat * 1e4)}`;
+    const report = buildCommunityReport(
+      id,
+      point.lng,
+      point.lat,
+      conditions,
+      COMMUNITY_REPORTS_DEMO_SOURCE,
+      now,
+    );
     controller.addReport(report);
-    // Reveal the community-reports layer so the new (unconfirmed) point is
-    // visible immediately, using the existing toggle path.
+    // Exit compose mode + ensure the layer + source reflect the new report.
     if (!layerVisibilityRef.current.communityReports) {
       handleLayerToggle(COMMUNITY_REPORTS_LAYER_ID, true);
     }
-    setReportPickActive(false);
-    reportPickActiveRef.current = false;
-    setTripNotice('Thanks — your unverified report was added to the map.');
+    refreshCommunityReportsSource();
+    setPendingReportPoint(null);
+    setConditionsEditId(null);
+    // Post-submit feedback (#2): immediately SELECT/open the new report's popup
+    // so the user sees it was recorded and can act on it. Consistent with the
+    // marker-click architecture â€” we build the same ReportPopupData the click
+    // handler would, from the report we just created.
+    setPopup({
+      kind: 'report',
+      props: buildReportPopupProps(reportToPopupData(report)),
+      lngLat: { lng: point.lng, lat: point.lat },
+    });
+    setTripNotice('Report submitted â€” community report, unverified.');
+  };
+
+  /**
+   * Projects a CommunityReport to the same ReportPopupData shape the marker
+   * click handler produces, so post-submit the new report opens through the
+   * identical popup path (single source of truth for popup props).
+   */
+  const reportToPopupData = (report: CommunityReport): ReportPopupData => {
+    const psgc = resolveBarangayForPoint(
+      report.metadata.location.lng,
+      report.metadata.location.lat,
+    );
+    return {
+      kind: 'community',
+      id: report.id,
+      state: report.state,
+      barangay: psgc ? (barangayInfoByPsgc.get(psgc)?.name ?? undefined) : undefined,
+      note: report.metadata.description,
+      updatedAt: report.metadata.updatedAt,
+      source: report.metadata.source,
+      severity: report.severity,
+      depth: report.depth,
+      passability: report.passability,
+      lifecycle: report.lifecycle ?? 'ACTIVE',
+      confirmationCount: report.confirmationCount ?? 0,
+      lastConfirmedAt: report.lastConfirmedAt ?? null,
+    };
+  };
+
+  /** Refreshes the community-reports marker source from the controller state. */
+  const refreshCommunityReportsSource = (): void => {
+    const controller = riskControllerRef.current;
+    const liveMap = managerRef.current?.getMap?.() ?? null;
+    if (!controller || !liveMap) return;
+    updateCommunityReportsSource(
+      liveMap as unknown as PointSourceUpdateMap,
+      controller.communityReports(),
+    );
+  };
+
+  /**
+   * Builds the ReportPopup props for a clicked marker, wiring the Community
+   * Report V2 lifecycle actions (community reports only). Each action calls the
+   * controller (which recomputes risk + repaints), refreshes the marker source,
+   * and closes the popup. Official closures get no actions.
+   */
+  const buildReportPopupProps = (data: ReportPopupData): ReportPopupProps => {
+    const base: ReportPopupProps = {
+      kind: data.kind,
+      id: data.id,
+      state: data.state,
+      barangay: data.barangay,
+      note: data.note,
+      updatedAt: data.updatedAt,
+      source: data.source,
+      depth: (data.depth || undefined) as ReportPopupProps['depth'],
+      passability: (data.passability || undefined) as ReportPopupProps['passability'],
+      severity: (data.severity || undefined) as ReportPopupProps['severity'],
+      lifecycle: data.lifecycle,
+      confirmationCount: data.confirmationCount,
+      lastConfirmedAt: data.lastConfirmedAt ?? undefined,
+    };
+    if (data.kind !== 'community' || !data.id) return base;
+    const id = data.id;
+    return {
+      ...base,
+      onConfirm: () => {
+        const updated = riskControllerRef.current?.confirmReport(id);
+        refreshCommunityReportsSource();
+        // Keep the popup OPEN and re-render it with the incremented count +
+        // last-confirmed time, so the confirmation is immediately visible on the
+        // very report being confirmed (scenario: confirm â†’ count increases).
+        if (updated) {
+          setPopup({
+            kind: 'report',
+            props: buildReportPopupProps(reportToPopupData(updated)),
+            lngLat: { lng: updated.metadata.location.lng, lat: updated.metadata.location.lat },
+          });
+        }
+        setTripNotice('Thanks â€” your confirmation was recorded (community).');
+      },
+      onConditionsChanged: () => {
+        setPopup(null);
+        setConditionsEditId(id);
+      },
+      onResolve: () => {
+        riskControllerRef.current?.resolveReport(id);
+        refreshCommunityReportsSource();
+        setPopup(null);
+        setTripNotice('Marked as cleared â€” thanks for the update (community).');
+      },
+    };
+  };
+
+  /** Applies a "conditions changed" update from the form to the given report. */
+  const handleConditionsUpdate = (conditions: ReportConditions): void => {
+    const id = conditionsEditId;
+    if (!id) return;
+    riskControllerRef.current?.updateReportConditions(id, conditions);
+    refreshCommunityReportsSource();
+    setConditionsEditId(null);
+    setTripNotice('Conditions updated â€” thanks (community).');
   };
 
   /**
    * Smoothly recenters/zooms back to the CURRENT origin's 3D preview without
-   * changing any state — used when the location arrow is pressed and an origin
+   * changing any state â€” used when the location arrow is pressed and an origin
    * already exists. Does not touch destination, layers, or route state.
    */
   const recenterOrigin = (): void => {
@@ -1827,10 +2089,10 @@ export function MapView({
    * The shared device-location fetch used by BOTH the "Use current location"
    * chip and the location arrow, AFTER consent. Requests the browser position
    * (native prompt may appear), then:
-   *  - granted + in NCR → set the device origin (normalized) + 3D preview,
-   *  - granted + outside NCR → reject cleanly with the coverage message,
-   *  - denied → subtle denied status (no re-prompt),
-   *  - unavailable/timeout → subtle unavailable status.
+   *  - granted + in NCR â†’ set the device origin (normalized) + 3D preview,
+   *  - granted + outside NCR â†’ reject cleanly with the coverage message,
+   *  - denied â†’ subtle denied status (no re-prompt),
+   *  - unavailable/timeout â†’ subtle unavailable status.
    * Route planning stays usable in every branch. Coordinates are never
    * persisted or logged.
    */
@@ -1882,9 +2144,9 @@ export function MapView({
 
   /**
    * Location arrow (map control). Same consent-first contract:
-   *  - never requested this session → show consent, then fetch on Allow;
-   *  - already granted this session + origin already set → recenter to it;
-   *  - already granted this session + no origin yet → fetch + set origin.
+   *  - never requested this session â†’ show consent, then fetch on Allow;
+   *  - already granted this session + origin already set â†’ recenter to it;
+   *  - already granted this session + no origin yet â†’ fetch + set origin.
    * Never resets destination, layers, or route.
    */
   const handleLocationArrow = (): void => {
@@ -1915,14 +2177,14 @@ export function MapView({
   };
 
   /**
-   * Enters Driver Mode for the chosen route option — the ONLY entry into Driver
+   * Enters Driver Mode for the chosen route option â€” the ONLY entry into Driver
    * Mode. Captures the route's aggregate risk as a cached snapshot so GPS ticks
    * don't re-query the environment, then starts the simulator on the route.
    */
   const handleStartRoute = (option: RouteOption): void => {
     const manager = managerRef.current;
     const candidate = option.candidate;
-    // Preserve the reroute demo ONLY for the flagship PITX→MOA primary route.
+    // Preserve the reroute demo ONLY for the flagship PITXâ†’MOA primary route.
     const isDemoRoute = candidate.id === 'pitx-moa-primary';
     activeHazardsRef.current = candidate.hazards;
     activeReroutesRef.current = isDemoRoute ? PITX_TO_MOA_REROUTES : [];
@@ -1989,7 +2251,7 @@ export function MapView({
    * rail, by priority, so two full panels can never stack on top of each other
    * (the overlap bug). A barangay selection (Flood Insights) wins; then an
    * active route comparison; then the Historical explore panel; then the trip
-   * search panel. Secondary state is never destroyed — e.g. a ready route stays
+   * search panel. Secondary state is never destroyed â€” e.g. a ready route stays
    * in memory and is reachable via the compact "Route ready" chip.
    */
   const primaryLeftPanel: PrimaryLeftPanel = resolvePrimaryLeftPanel({
@@ -2004,7 +2266,7 @@ export function MapView({
   /**
    * A ready route exists but the Route Compare panel is NOT the primary panel
    * (Insights or Explore took the rail). Surface a compact, recoverable chip so
-   * the route is never lost — tapping it swaps Compare back in.
+   * the route is never lost â€” tapping it swaps Compare back in.
    */
   const selectedRouteOption =
     routeOptions.find((o) => o.candidate.id === selectedRouteId) ?? routeOptions[0] ?? null;
@@ -2133,7 +2395,17 @@ export function MapView({
         }
         break;
       case 'communityReports':
-        safeSet('communityReports');
+        // Toggle the pin + its companion badge/hitbox layers together.
+        if (registry) {
+          setCommunityReportsVisibility(
+            map as unknown as {
+              setLayoutProperty?(id: string, name: string, value: unknown): unknown;
+              getLayer?(id: string): unknown;
+            },
+            registry,
+            visible,
+          );
+        }
         break;
       case 'officialClosures':
         safeSet('officialClosures');
@@ -2210,7 +2482,7 @@ export function MapView({
   /**
    * Keep the historical layer's SELECTED (strong-outline) barangay in sync with
    * the panel. The selection is the clicked barangay (Flood Insights open) or,
-   * failing that, the Barangay-view filter selection — so map and panel always
+   * failing that, the Barangay-view filter selection â€” so map and panel always
    * agree on which barangay is highlighted. Single writer for the selection
    * feature-state (avoids conflicting updates).
    */
@@ -2245,7 +2517,7 @@ export function MapView({
   /**
    * Scopes the zoom-aware barangay NAME labels to a single city (or none).
    * Uses Mapbox `setFilter` on the label layer with {@link cityLabelFilter}, so
-   * only the selected city's barangays are label candidates — never all 1,710
+   * only the selected city's barangays are label candidates â€” never all 1,710
    * NCR barangays, and nothing at the NCR overview. Best-effort / no-op on a
    * fake map (tests) or before the layer exists.
    */
@@ -2283,8 +2555,8 @@ export function MapView({
    * Visual co-existence when BOTH flood layers are enabled: the historical fill
    * recedes to a faint overlay while the user's focus is Current (a barangay is
    * open on the Current tab), so the indigo/violet historical fill and the
-   * green→red current fill never stack into a muddy double-fill. When only
-   * Historical is on — or the Historical tab is active — it returns to its full
+   * greenâ†’red current fill never stack into a muddy double-fill. When only
+   * Historical is on â€” or the Historical tab is active â€” it returns to its full
    * fill. Paint-only; no data/feature-state/classification is touched.
    */
   useEffect(() => {
@@ -2296,8 +2568,8 @@ export function MapView({
     const barangayOpen = popup?.kind === 'barangay';
     // When both layers are on, exactly ONE is the primary fill; the other
     // recedes so the two color families never stack into muddy colors:
-    //   focus Current (default / Current tab) → historical dimmed
-    //   focus Historical (Historical tab open) → current dimmed
+    //   focus Current (default / Current tab) â†’ historical dimmed
+    //   focus Historical (Historical tab open) â†’ current dimmed
     const historicalIsFocus = bothOn && barangayOpen && insightsTab === 'historical';
     const dimHistorical = bothOn && !historicalIsFocus;
     const dimCurrent = historicalIsFocus;
@@ -2405,8 +2677,8 @@ export function MapView({
           <div className="baharoute-control-card baharoute-control-card--rotate"><RotateControl bearing={bearing} onRotate={handleRotateBy} onResetNorth={handleResetNorth} /></div>
           <div className="baharoute-control-card baharoute-control-card--single"><LocationControl onActivate={handleLocationArrow} /></div>
           <div className="baharoute-control-card baharoute-control-card--single">
-            <button type="button" className="baharoute-report-flood baharoute-focus-ring" aria-pressed={reportPickActive} title="Report flooding (adds an unverified community report)" aria-label="Report flooding — adds an unverified community report at a point you tap" onClick={handleReportFloodingToggle}>
-              <span aria-hidden="true">⚠</span>
+            <button type="button" className="baharoute-report-flood baharoute-focus-ring" aria-pressed={reportPickActive} title="Report flooding (adds an unverified community report)" aria-label="Report flooding â€” adds an unverified community report at a point you tap" onClick={handleReportFloodingToggle}>
+              <span aria-hidden="true">âš </span>
             </button>
           </div>
           <CamButton
@@ -2425,7 +2697,7 @@ export function MapView({
             onToggle={handleLayerToggle}
             statusById={
               floodRiskVisible && riskStatus?.dataUnavailable
-                ? { barangayFloodRisk: '⚠ unavailable' }
+                ? { barangayFloodRisk: 'âš  unavailable' }
                 : undefined
             }
             hint={
@@ -2451,7 +2723,7 @@ export function MapView({
         !popupOpen &&
         /* Suppress the bottom-left legend only when a TALL left-column panel
            (Historical Explore / Flood Insights) is ACTUALLY rendered in that
-           column — which is what caused the "orphan card under Historical
+           column â€” which is what caused the "orphan card under Historical
            Explore" overlap. Those hosts render only in the ready phase; the
            compact Search/Compare trip panels sit at the top and never reach the
            legend, so the legend stays visible with them. */
@@ -2510,8 +2782,23 @@ export function MapView({
         </div>
       )}
 
+      {/* Community Report V2 form: shown after a report-mode tap (new report)
+          or when editing an existing report's conditions. Collects structured
+          severity/depth/passability + an optional note. Clearly unverified. */}
+      {phase !== 'error' && !driving && (pendingReportPoint || conditionsEditId) && (
+        <div className="baharoute-report-form-host" data-testid="report-form-host">
+          <ReportForm
+            onSubmit={conditionsEditId ? handleConditionsUpdate : handleReportFormSubmit}
+            onCancel={() => {
+              setPendingReportPoint(null);
+              setConditionsEditId(null);
+            }}
+          />
+        </div>
+      )}
+
       {/* Trip flow panels: SEARCH then COMPARE. The first interaction is
-          planning a trip — never Driver Mode. Hidden while driving/error.
+          planning a trip â€” never Driver Mode. Hidden while driving/error.
           When a barangay's Flood Insights is open, it temporarily REPLACES the
           resumable search panel so two large left-side panels never stack
           (they restore when Insights closes). */}
@@ -2565,7 +2852,7 @@ export function MapView({
       )}
 
       {/* Compact live-data status pill. Shown ONLY when the Flood Risk layer is
-          enabled — the pill reports the live rainfall source the user is
+          enabled â€” the pill reports the live rainfall source the user is
           actually viewing. Suppressed when Flood Risk is OFF (Phase 4 cleanup).
           Hidden while driving/error. */}
       {phase === 'ready' &&
@@ -2580,7 +2867,7 @@ export function MapView({
         )}
 
       {/* Historical "explore" panel (filters + NCR/city summaries). Shown only
-          when the Historical layer is enabled and no barangay is selected —
+          when the Historical layer is enabled and no barangay is selected â€”
           per-barangay detail lives in Flood Insights. Independent of current
           risk. */}
       {phase === 'ready' && primaryLeftPanel === 'explore' && (
@@ -2655,7 +2942,7 @@ export function MapView({
             data-testid="history-context-message"
             role="status"
           >
-            Current risk unavailable — historical susceptibility shown for
+            Current risk unavailable â€” historical susceptibility shown for
             reference.
           </div>
         )}
@@ -2702,7 +2989,7 @@ export function MapView({
         >
           <span className="baharoute-route-chip__title">Route ready</span>
           <span className="baharoute-route-chip__meta">
-            {formatDuration(selectedRouteOption.candidate.durationS)} ·{' '}
+            {formatDuration(selectedRouteOption.candidate.durationS)} Â·{' '}
             {formatDistance(selectedRouteOption.candidate.distanceM)}
           </span>
           <span className="baharoute-route-chip__cta" aria-hidden="true">
@@ -2711,8 +2998,11 @@ export function MapView({
         </button>
       )}
 
-      {/* Report / susceptibility popups keep the compact floating card host. */}
-      {popup && popup.kind !== 'barangay' && (
+      {/* Report / susceptibility popups keep the compact floating card host.
+          Mutually exclusive with the report-compose form (defense-in-depth for
+          #1/#6): never render a selected-report popup while composing/editing a
+          report, so lifecycle actions can't appear during new-report creation. */}
+      {popup && popup.kind !== 'barangay' && !pendingReportPoint && !conditionsEditId && (
         <div className="baharoute-popup-host" data-testid="map-popup-host">
           <button
             type="button"
