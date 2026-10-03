@@ -626,9 +626,11 @@ body,
 }
 
 .baharoute-cam-panel {
-  position: absolute;
-  right: calc(100% + 8px);
-  top: 0;
+  position: fixed;
+  left: auto;
+  top: calc(50% - 40px);
+  right: calc(60px + var(--baharoute-safe-right));
+  transform: translateY(-50%);
   width: min(440px, calc(100vw - 32px));
   max-height: calc(100vh - 2 * var(--baharoute-control-inset) - 40px);
   overflow-y: auto;
@@ -664,6 +666,7 @@ body,
 .baharoute-cam-panel--mobile {
   position: relative;
   inset: auto;
+  transform: none;
   width: min(520px, 100%);
   max-height: 100%;
   margin: auto;
@@ -1295,7 +1298,9 @@ body,
     position: fixed;
     left: 0;
     right: 0;
+    top: auto;
     bottom: 0;
+    transform: none;
     width: auto;
     max-height: 80dvh;
     padding-bottom: calc(14px + var(--baharoute-safe-bottom));
