@@ -2671,3 +2671,262 @@ body,
   font-weight: 600;
   color: #0d9488;
 }
+
+/* --- Community Report V2: report form + popup actions -------------------- */
+.baharoute-report-form-host {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--baharoute-control-inset) + var(--baharoute-safe-bottom, 0px) + 12px);
+  transform: translateX(-50%);
+  z-index: 6;
+  width: min(360px, calc(100vw - 24px));
+}
+.baharoute-report-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  background: var(--baharoute-surface, #fff);
+  border-radius: var(--baharoute-radius, 12px);
+  box-shadow: var(--baharoute-shadow, 0 6px 24px rgba(0, 0, 0, 0.18));
+  max-height: 70vh;
+  overflow-y: auto;
+}
+.baharoute-report-form__title {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+.baharoute-report-form__subtitle {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #b45309;
+}
+.baharoute-report-form__group {
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.baharoute-report-form__legend {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--baharoute-label, #6f6a62);
+  padding: 0 0 4px;
+}
+.baharoute-report-form__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.baharoute-report-form__chip {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 4px 12px;
+  font-size: 13px;
+  border: 1px solid var(--baharoute-border, #e2ded7);
+  border-radius: 999px;
+  cursor: pointer;
+  user-select: none;
+}
+.baharoute-report-form__chip--selected {
+  background: #2f80ed;
+  border-color: #2f80ed;
+  color: #fff;
+  font-weight: 600;
+}
+.baharoute-report-form__note-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--baharoute-label, #6f6a62);
+}
+.baharoute-report-form__note {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  padding: 8px;
+  font: inherit;
+  border: 1px solid var(--baharoute-border, #e2ded7);
+  border-radius: 8px;
+}
+.baharoute-report-form__actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.baharoute-report-form__cancel,
+.baharoute-report-form__submit {
+  min-height: 40px;
+  padding: 0 16px;
+  border-radius: 10px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.baharoute-report-form__cancel {
+  background: transparent;
+  border: 1px solid var(--baharoute-border, #e2ded7);
+}
+.baharoute-report-form__submit {
+  background: #b45309;
+  border: 1px solid #b45309;
+  color: #fff;
+}
+
+/* Report popup V2 condition summary + lifecycle action buttons. */
+.baharoute-report-popup__conditions {
+  margin: 4px 0 2px;
+}
+.baharoute-report-popup__depth {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+.baharoute-report-popup__pass {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #4a4640;
+}
+.baharoute-report-popup__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.baharoute-report-popup__action {
+  min-height: 34px;
+  padding: 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid var(--baharoute-border, #e2ded7);
+  border-radius: 8px;
+  background: var(--baharoute-surface, #fff);
+  cursor: pointer;
+}
+.baharoute-report-popup__action--resolve {
+  border-color: #2e7d32;
+  color: #2e7d32;
+}
+
+/* --- Community Report V2 realism: form eyebrow + popup card -------------- */
+.baharoute-report-form__eyebrow {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #b45309;
+}
+
+/* Larger, tap-friendly chips for the mobile-first form. */
+.baharoute-report-form__chip {
+  min-height: 40px;
+  font-size: 14px;
+}
+
+/* Community report popup card hierarchy. */
+.baharoute-report-popup__eyebrow {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: #2563eb;
+}
+.baharoute-report-popup--resolved .baharoute-report-popup__eyebrow {
+  color: #6b7280;
+}
+.baharoute-report-popup__headline {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.baharoute-report-popup__pass {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #4a4640;
+}
+.baharoute-report-popup__meta {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--baharoute-text-muted, #6f6a62);
+}
+.baharoute-report-popup__freshness {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--baharoute-text-muted, #6f6a62);
+}
+.baharoute-report-popup__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #9aa0a6;
+  flex: none;
+}
+.baharoute-report-popup__freshness--fresh .baharoute-report-popup__dot {
+  background: #2e7d32;
+}
+.baharoute-report-popup__freshness--aging .baharoute-report-popup__dot {
+  background: #f6c445;
+}
+.baharoute-report-popup__freshness--expired .baharoute-report-popup__dot {
+  background: #9aa0a6;
+}
+.baharoute-report-popup__confirmations {
+  margin: 10px 0 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.baharoute-report-popup__confirmed-time {
+  margin: 1px 0 0;
+  font-size: 12px;
+  color: var(--baharoute-text-muted, #6f6a62);
+}
+.baharoute-report-popup__note-block {
+  margin: 10px 0 0;
+}
+.baharoute-report-popup__note-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--baharoute-text-muted, #6f6a62);
+}
+.baharoute-report-popup__note {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #333;
+}
+.baharoute-report-popup__trust-block {
+  margin: 10px 0 0;
+  padding: 8px 10px;
+  background: #eef4ff;
+  border: 1px solid #cfe0ff;
+  border-radius: 8px;
+}
+.baharoute-report-popup__trust {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #2563eb;
+}
+.baharoute-report-popup__trust-sub {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: #3b5bdb;
+}
+.baharoute-report-popup__resolved-note {
+  margin: 8px 0 0;
+  font-size: 13px;
+  color: var(--baharoute-text-muted, #6f6a62);
+}

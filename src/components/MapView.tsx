@@ -151,10 +151,13 @@ import {
   installReportMarkers,
   installReportPopups,
   updateCommunityReportsSource,
+  setCommunityReportsVisibility,
+  reregisterCommunityImages,
   COMMUNITY_REPORTS_LAYER_ID,
   type PointLayerMapAdapter,
   type PointSourceUpdateMap,
   type ReportPopupMap,
+  type ReportPopupData,
 } from '../layers/reportMarkersLayer';
 import {
   installAiFloodEvidence,
@@ -172,6 +175,14 @@ import {
   type CityContextMapAdapter,
 } from '../layers/cityContextLayer';
 import { ReportPopup, type ReportPopupProps } from './overlays/ReportPopup';
+import { ReportForm } from './overlays/ReportForm';
+import {
+  buildCommunityReport,
+  type ReportConditions,
+} from '../services/reportLifecycle';
+import type { CommunityReport } from '../types/report';
+import { resolveBarangayForPoint } from '../services/reportResolution';
+import { barangayInfoByPsgc } from '../data/geojson/ncrBarangays';
 import {
   FloodInsights,
   type InsightsTab,
@@ -240,7 +251,6 @@ import {
   type PrimaryLeftPanel,
 } from './primaryLeftPanel';
 import type { TimelineStep } from '../types/risk';
-import type { CommunityReport } from '../types/report';
 import {
   communityReportFixtures,
   COMMUNITY_REPORTS_DEMO_SOURCE,
@@ -517,6 +527,8 @@ export function MapView({
   const uninstallCityPopupRef = useRef<(() => void) | null>(null);
   const uninstallBarangayPopupRef = useRef<(() => void) | null>(null);
   const uninstallReportPopupRef = useRef<(() => void) | null>(null);
+  /** Teardown for the community-marker image re-registration (style reload). */
+  const uninstallMarkerImageReloadRef = useRef<(() => void) | null>(null);
   /** Teardown for the AI evidence marker popup. */
   const uninstallEvidencePopupRef = useRef<(() => void) | null>(null);
   /** Owns the live barangay current-risk pipeline (rainfall → risk → paint). */
@@ -785,6 +797,10 @@ export function MapView({
       if (uninstallReportPopupRef.current) {
         uninstallReportPopupRef.current();
         uninstallReportPopupRef.current = null;
+      }
+      if (uninstallMarkerImageReloadRef.current) {
+        uninstallMarkerImageReloadRef.current();
+        uninstallMarkerImageReloadRef.current = null;
       }
       if (uninstallEvidencePopupRef.current) {
         uninstallEvidencePopupRef.current();
@@ -1152,17 +1168,32 @@ export function MapView({
           (data, lngLat) =>
             setPopup({
               kind: 'report',
-              props: {
-                kind: data.kind,
-                state: data.state,
-                barangay: data.barangay,
-                note: data.note,
-                updatedAt: data.updatedAt,
-                source: data.source,
-              },
+              props: buildReportPopupProps(data),
               lngLat,
             }),
         );
+
+        // STYLE-RELOAD SAFETY: Mapbox drops custom images on a full style
+        // reload, which would blank the community pins. Re-register them on
+        // styledata/style.load (hasImage-guarded, so it never throws a
+        // duplicate-image error). Best-effort; teardown removes the listener.
+        try {
+          const styled = map as unknown as {
+            on?: (t: string, l: () => void) => void;
+            off?: (t: string, l: () => void) => void;
+          };
+          const onStyle = (): void => {
+            try {
+              reregisterCommunityImages(map as unknown as PointLayerMapAdapter);
+            } catch {
+              // Images re-register best-effort; a failure never breaks the map.
+            }
+          };
+          styled.on?.('styledata', onStyle);
+          uninstallMarkerImageReloadRef.current = () => styled.off?.('styledata', onStyle);
+        } catch {
+          // Best-effort.
+        }
 
         // AI Flood Evidence overlay (GDELT discovery). Its own try so a failure
         // of the evidence agent NEVER breaks the map or the other layers — the
@@ -1358,6 +1389,19 @@ export function MapView({
   /** True while "report flooding" map-pick mode is active (next tap = report). */
   const [reportPickActive, setReportPickActive] = useState(false);
   const reportPickActiveRef = useRef(false);
+  /**
+   * The map point the user tapped in report mode, awaiting the report FORM
+   * (Community Report V2). Null when no report is being composed. When set, the
+   * ReportForm is shown; submitting it creates the UNCONFIRMED community report.
+   */
+  const [pendingReportPoint, setPendingReportPoint] = useState<{ lng: number; lat: number } | null>(
+    null,
+  );
+  /**
+   * The id of a community report whose conditions the user is editing
+   * ("Conditions changed"). Null when not editing. Reuses the ReportForm.
+   */
+  const [conditionsEditId, setConditionsEditId] = useState<string | null>(null);
   /** A transient trip-flow notice (e.g. out-of-NCR tap/location). */
   const [tripNotice, setTripNotice] = useState<string | null>(null);
   /** True while route geometry is being fetched (disables Find routes). */
@@ -1741,6 +1785,13 @@ export function MapView({
       setPickTarget(null);
       pickTargetRef.current = null;
       setTripNotice(null);
+      // ROOT-CAUSE FIX (#1/#6): entering report mode CLOSES any selected-report
+      // popup and clears any pending compose state, so the lifecycle action
+      // buttons (Confirm/Conditions changed/Flood cleared) can never linger
+      // behind the report form. These overlays are mutually exclusive by state.
+      setPopup(null);
+      setPendingReportPoint(null);
+      setConditionsEditId(null);
     }
   };
 
@@ -1757,32 +1808,161 @@ export function MapView({
       setTripNotice(UNSUPPORTED_AREA_MESSAGE);
       return;
     }
+    // Community Report V2: a tap no longer creates a hardcoded report. It opens
+    // the report FORM for this point; submitting the form creates the report.
+    // Clear any selected-report popup + conditions edit so the new-report form
+    // is the ONLY report overlay on screen (root-cause fix for #1/#6).
+    setReportPickActive(false);
+    reportPickActiveRef.current = false;
+    setPopup(null);
+    setConditionsEditId(null);
+    setPendingReportPoint({ lng, lat });
+  };
+
+  /**
+   * Creates an UNCONFIRMED community report from the pending point + the form's
+   * structured conditions, then reveals the community-reports layer. The report
+   * can at most escalate a barangay to REPORTED_FLOODING, NEVER
+   * CONFIRMED_NOT_PASSABLE (official-only). Reuses addReport + the marker-refresh
+   * listener. (Community Report V2 Phase 1.)
+   */
+  const handleReportFormSubmit = (conditions: ReportConditions): void => {
+    const point = pendingReportPoint;
     const controller = riskControllerRef.current;
-    if (!controller) return;
+    if (!point || !controller) {
+      setPendingReportPoint(null);
+      return;
+    }
     const now = Math.floor(Date.now() / 1000);
-    const report: CommunityReport = {
-      id: `user-report-${now}-${Math.round(lng * 1e4)}-${Math.round(lat * 1e4)}`,
-      state: 'ORANGE',
-      passable: false,
-      metadata: {
-        location: { lng, lat },
-        source: COMMUNITY_REPORTS_DEMO_SOURCE,
-        dataType: 'COMMUNITY_REPORT',
-        updatedAt: now,
-        verificationStatus: 'UNCONFIRMED',
-        description:
-          'User-submitted community report of flooding. Unverified / not authoritative.',
-      },
-    };
+    const id = `user-report-${now}-${Math.round(point.lng * 1e4)}-${Math.round(point.lat * 1e4)}`;
+    const report = buildCommunityReport(
+      id,
+      point.lng,
+      point.lat,
+      conditions,
+      COMMUNITY_REPORTS_DEMO_SOURCE,
+      now,
+    );
     controller.addReport(report);
-    // Reveal the community-reports layer so the new (unconfirmed) point is
-    // visible immediately, using the existing toggle path.
+    // Exit compose mode + ensure the layer + source reflect the new report.
     if (!layerVisibilityRef.current.communityReports) {
       handleLayerToggle(COMMUNITY_REPORTS_LAYER_ID, true);
     }
-    setReportPickActive(false);
-    reportPickActiveRef.current = false;
-    setTripNotice('Thanks — your unverified report was added to the map.');
+    refreshCommunityReportsSource();
+    setPendingReportPoint(null);
+    setConditionsEditId(null);
+    // Post-submit feedback (#2): immediately SELECT/open the new report's popup
+    // so the user sees it was recorded and can act on it. Consistent with the
+    // marker-click architecture — we build the same ReportPopupData the click
+    // handler would, from the report we just created.
+    setPopup({
+      kind: 'report',
+      props: buildReportPopupProps(reportToPopupData(report)),
+      lngLat: { lng: point.lng, lat: point.lat },
+    });
+    setTripNotice('Report submitted — community report, unverified.');
+  };
+
+  /**
+   * Projects a CommunityReport to the same ReportPopupData shape the marker
+   * click handler produces, so post-submit the new report opens through the
+   * identical popup path (single source of truth for popup props).
+   */
+  const reportToPopupData = (report: CommunityReport): ReportPopupData => {
+    const psgc = resolveBarangayForPoint(
+      report.metadata.location.lng,
+      report.metadata.location.lat,
+    );
+    return {
+      kind: 'community',
+      id: report.id,
+      state: report.state,
+      barangay: psgc ? (barangayInfoByPsgc.get(psgc)?.name ?? undefined) : undefined,
+      note: report.metadata.description,
+      updatedAt: report.metadata.updatedAt,
+      source: report.metadata.source,
+      severity: report.severity,
+      depth: report.depth,
+      passability: report.passability,
+      lifecycle: report.lifecycle ?? 'ACTIVE',
+      confirmationCount: report.confirmationCount ?? 0,
+      lastConfirmedAt: report.lastConfirmedAt ?? null,
+    };
+  };
+
+  /** Refreshes the community-reports marker source from the controller state. */
+  const refreshCommunityReportsSource = (): void => {
+    const controller = riskControllerRef.current;
+    const liveMap = managerRef.current?.getMap?.() ?? null;
+    if (!controller || !liveMap) return;
+    updateCommunityReportsSource(
+      liveMap as unknown as PointSourceUpdateMap,
+      controller.communityReports(),
+    );
+  };
+
+  /**
+   * Builds the ReportPopup props for a clicked marker, wiring the Community
+   * Report V2 lifecycle actions (community reports only). Each action calls the
+   * controller (which recomputes risk + repaints), refreshes the marker source,
+   * and closes the popup. Official closures get no actions.
+   */
+  const buildReportPopupProps = (data: ReportPopupData): ReportPopupProps => {
+    const base: ReportPopupProps = {
+      kind: data.kind,
+      id: data.id,
+      state: data.state,
+      barangay: data.barangay,
+      note: data.note,
+      updatedAt: data.updatedAt,
+      source: data.source,
+      depth: (data.depth || undefined) as ReportPopupProps['depth'],
+      passability: (data.passability || undefined) as ReportPopupProps['passability'],
+      severity: (data.severity || undefined) as ReportPopupProps['severity'],
+      lifecycle: data.lifecycle,
+      confirmationCount: data.confirmationCount,
+      lastConfirmedAt: data.lastConfirmedAt ?? undefined,
+    };
+    if (data.kind !== 'community' || !data.id) return base;
+    const id = data.id;
+    return {
+      ...base,
+      onConfirm: () => {
+        const updated = riskControllerRef.current?.confirmReport(id);
+        refreshCommunityReportsSource();
+        // Keep the popup OPEN and re-render it with the incremented count +
+        // last-confirmed time, so the confirmation is immediately visible on the
+        // very report being confirmed (scenario: confirm → count increases).
+        if (updated) {
+          setPopup({
+            kind: 'report',
+            props: buildReportPopupProps(reportToPopupData(updated)),
+            lngLat: { lng: updated.metadata.location.lng, lat: updated.metadata.location.lat },
+          });
+        }
+        setTripNotice('Thanks — your confirmation was recorded (community).');
+      },
+      onConditionsChanged: () => {
+        setPopup(null);
+        setConditionsEditId(id);
+      },
+      onResolve: () => {
+        riskControllerRef.current?.resolveReport(id);
+        refreshCommunityReportsSource();
+        setPopup(null);
+        setTripNotice('Marked as cleared — thanks for the update (community).');
+      },
+    };
+  };
+
+  /** Applies a "conditions changed" update from the form to the given report. */
+  const handleConditionsUpdate = (conditions: ReportConditions): void => {
+    const id = conditionsEditId;
+    if (!id) return;
+    riskControllerRef.current?.updateReportConditions(id, conditions);
+    refreshCommunityReportsSource();
+    setConditionsEditId(null);
+    setTripNotice('Conditions updated — thanks (community).');
   };
 
   /**
@@ -2109,7 +2289,17 @@ export function MapView({
         }
         break;
       case 'communityReports':
-        safeSet('communityReports');
+        // Toggle the pin + its companion badge/hitbox layers together.
+        if (registry) {
+          setCommunityReportsVisibility(
+            map as unknown as {
+              setLayoutProperty?(id: string, name: string, value: unknown): unknown;
+              getLayer?(id: string): unknown;
+            },
+            registry,
+            visible,
+          );
+        }
         break;
       case 'officialClosures':
         safeSet('officialClosures');
@@ -2517,6 +2707,21 @@ export function MapView({
         </div>
       )}
 
+      {/* Community Report V2 form: shown after a report-mode tap (new report)
+          or when editing an existing report's conditions. Collects structured
+          severity/depth/passability + an optional note. Clearly unverified. */}
+      {phase !== 'error' && !driving && (pendingReportPoint || conditionsEditId) && (
+        <div className="baharoute-report-form-host" data-testid="report-form-host">
+          <ReportForm
+            onSubmit={conditionsEditId ? handleConditionsUpdate : handleReportFormSubmit}
+            onCancel={() => {
+              setPendingReportPoint(null);
+              setConditionsEditId(null);
+            }}
+          />
+        </div>
+      )}
+
       {/* Trip flow panels: SEARCH then COMPARE. The first interaction is
           planning a trip — never Driver Mode. Hidden while driving/error.
           When a barangay's Flood Insights is open, it temporarily REPLACES the
@@ -2719,8 +2924,11 @@ export function MapView({
         </button>
       )}
 
-      {/* Report / susceptibility popups keep the compact floating card host. */}
-      {popup && popup.kind !== 'barangay' && (
+      {/* Report / susceptibility popups keep the compact floating card host.
+          Mutually exclusive with the report-compose form (defense-in-depth for
+          #1/#6): never render a selected-report popup while composing/editing a
+          report, so lifecycle actions can't appear during new-report creation. */}
+      {popup && popup.kind !== 'barangay' && !pendingReportPoint && !conditionsEditId && (
         <div className="baharoute-popup-host" data-testid="map-popup-host">
           <button
             type="button"
