@@ -61,6 +61,7 @@ describe('camera markers and popup media', () => {
 
   it('opens an image preview linked to the Windy camera detail page with attribution', () => {
     const popup = createCameraPopupContent(camera());
+    expect(popup.querySelector('[data-summary="location"]')?.textContent).toBe('Manila');
     const image = popup.querySelector('img');
     expect(image?.src).toBe('https://images.example.test/frame.jpg');
     expect(image?.alt).toContain('Test camera');

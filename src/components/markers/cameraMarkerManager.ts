@@ -391,8 +391,7 @@ function updateCameraSummary(camera: MetroManilaTrafficCamera, root: HTMLElement
 }
 
 function formatCameraLocation(camera: MetroManilaTrafficCamera): string {
-  const [longitude, latitude] = camera.coordinates;
-  return `${formatCameraPlace(camera)} · ${Math.abs(latitude).toFixed(4)}° ${latitude < 0 ? 'S' : 'N'}, ${Math.abs(longitude).toFixed(4)}° ${longitude < 0 ? 'W' : 'E'}`;
+  return formatCameraPlace(camera);
 }
 
 function formatCameraPlace(camera: MetroManilaTrafficCamera): string {
