@@ -4,8 +4,8 @@ import App from './App';
 import type { AppConfig } from './types/config';
 import type { MapManagerLike } from './components/MapView';
 
-const KEY_PRESENT: AppConfig = { tileKey: 'test-key-123', hasTileKey: true, demoMode: false };
-const KEY_ABSENT: AppConfig = { hasTileKey: false, demoMode: false };
+const KEY_PRESENT: AppConfig = { tileKey: 'test-key-123', hasTileKey: true };
+const KEY_ABSENT: AppConfig = { hasTileKey: false };
 
 /** A fake MapManager so MapView can mount without a real WebGL map. */
 function makeFakeManager() {

@@ -311,7 +311,6 @@ describe('routeSegmentExplanation (reads back the existing summary)', () => {
     level: 'LOW',
     higherRiskSegments: 0,
     reportCount: 0,
-    webEvidenceCount: 0,
     closureCount: 0,
     trend: 'unknown',
     dataUnavailable: false,

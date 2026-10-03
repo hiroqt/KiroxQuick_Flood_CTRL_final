@@ -22,7 +22,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { MapView, type MapManagerLike } from './MapView';
 import type { AppConfig } from '../types/config';
 
-const CONFIG: AppConfig = { tileKey: 'test-key-123', hasTileKey: true, demoMode: false };
+const CONFIG: AppConfig = { tileKey: 'test-key-123', hasTileKey: true };
 
 /**
  * The raw layout.css text, read from disk (resolved from the workspace root
