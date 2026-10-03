@@ -1,0 +1,631 @@
+{
+  "pbtResults": {
+    "4.2 Property test — classification yields a valid Flood_State": {
+      "status": "passed",
+      "lastRunTimestamp": 1790521495390
+    },
+    "4.3 Property test — required metadata gates acceptance and projection": {
+      "status": "passed",
+      "lastRunTimestamp": 1790521496781
+    },
+    "4.4 Property test — GREEN only for present-and-recent passability": {
+      "status": "passed",
+      "lastRunTimestamp": 1790521498216
+    },
+    "4.5 Property test — absent/stale is GRAY, never \"no risk\"": {
+      "status": "passed",
+      "lastRunTimestamp": 1790521499290
+    },
+    "4.10 Property test — susceptibility opacity is non-increasing as zoom increases": {
+      "status": "passed",
+      "lastRunTimestamp": 1790521506166
+    },
+    "8.3 Property test — malformed items skipped without throwing": {
+      "status": "passed",
+      "lastRunTimestamp": 1790521852260
+    },
+    "8.4 Property test — empty layers project to a well-formed empty collection": {
+      "status": "passed",
+      "lastRunTimestamp": 1790521853426
+    },
+    "4.7 Property test — state labels stay within approved vocabulary": {
+      "status": "passed",
+      "lastRunTimestamp": 1790522101307
+    },
+    "4.8 Property test — susceptibility vs report treatments are mutually exclusive": {
+      "status": "passed",
+      "lastRunTimestamp": 1790522103277
+    }
+  },
+  "executionHistory": {
+    "1. Initialize greenfield React + TypeScript + Vite project and test tooling": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520616714
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520631586
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521032187
+      }
+    ],
+    "2.1 Implement the env config loader and `.env.example`": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520616845
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521038615
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521194169
+      }
+    ],
+    "3. Define TypeScript data models & types (architecture readiness)": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520616899
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521039757
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521192727
+      }
+    ],
+    "4.1 Implement `validateFloodMetadata` and `classifyFloodState`": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520616928
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521201004
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521530424
+      }
+    ],
+    "4.6 Implement susceptibility color mapping and state-label mapping": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520616955
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521912029
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790522314498
+      }
+    ],
+    "4.9 Implement the zoom-opacity fade function": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617005
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521202387
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521538175
+      }
+    ],
+    "5. Checkpoint — pure logic verified": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617029
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790522316755
+      }
+    ],
+    "7. Metro_Manila_Extent constant & MapManager lifecycle": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617064
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521913007
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790522315755
+      }
+    ],
+    "8.1 Implement `FixtureDataSource` and per-category `DataLayer`s": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617092
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521203527
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521212078
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521555043
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521901247
+      }
+    ],
+    "8.2 Author the isolated, clearly-labeled demo fixtures": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617121
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521040707
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521530194
+      }
+    ],
+    "9. LayerRegistry with fixed z-order": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617151
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790522330651
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790522684179
+      }
+    ],
+    "10.1 Render translucent, zoom-faded susceptibility polygons over the readable basemap": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617179
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790522692318
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523032013
+      }
+    ],
+    "10.2 Implement the susceptibility click/tap popup": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617219
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523043254
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523441869
+      }
+    ],
+    "11. MapView React wrapper & app shell": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617247
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790522330850
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790522685176
+      }
+    ],
+    "12. Checkpoint — map renders with susceptibility layer": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617279
+      }
+    ],
+    "13.1 Implement `LocationControl` and geolocation service": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617308
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790522693539
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523033372
+      }
+    ],
+    "13.2 Implement `RecenterControl`": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617362
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790522694296
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523034322
+      }
+    ],
+    "13.3 Implement `ZoomControls`": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617385
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790522695969
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523035718
+      }
+    ],
+    "13.4 Implement `LayerControl`": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617414
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523044863
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523442647
+      }
+    ],
+    "14.1 Implement `OriginMarker` / `DestinationMarker`": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617440
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523045537
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523445486
+      }
+    ],
+    "15.1 Implement overlay/messaging components": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617474
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790522696646
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523036752
+      }
+    ],
+    "15.2 Wire loading/error/demo overlays into MapView": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617516
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523454341
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523783466
+      }
+    ],
+    "16. Responsive layout": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617543
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523789874
+      }
+    ],
+    "17. Accessibility hardening": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617572
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790524147213
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790524152999
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790524428398
+      }
+    ],
+    "18. Graceful error-handling wiring (end-to-end)": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617596
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790524153930
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790524660582
+      }
+    ],
+    "19. Milestone 1 quality gate — final checkpoint": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790520617619
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790524667784
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790524717725
+      }
+    ],
+    "2. Environment configuration & secure API key loading": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521194201
+      }
+    ],
+    "2.2 Write unit tests for the env config loader": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521194894
+      }
+    ],
+    "4.2 Property test — classification yields a valid Flood_State": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521532089
+      }
+    ],
+    "4.3 Property test — required metadata gates acceptance and projection": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521533045
+      }
+    ],
+    "4.4 Property test — GREEN only for present-and-recent passability": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521534242
+      }
+    ],
+    "4.5 Property test — absent/stale is GRAY, never \"no risk\"": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521535645
+      }
+    ],
+    "4.10 Property test — susceptibility opacity is non-increasing as zoom increases": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521538151
+      }
+    ],
+    "6. Custom quiet BahaRoute basemap style asset & color tokens": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521556155
+      },
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521898387
+      }
+    ],
+    "6.1 Write unit/build check for the basemap saturation & road-hierarchy rules": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521900026
+      }
+    ],
+    "8. Data layer implementation & isolated demo fixtures": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521901275
+      }
+    ],
+    "8.3 Property test — malformed items skipped without throwing": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521902611
+      }
+    ],
+    "8.4 Property test — empty layers project to a well-formed empty collection": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790521905273
+      }
+    ],
+    "4.7 Property test — state labels stay within approved vocabulary": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790522311990
+      }
+    ],
+    "4.8 Property test — susceptibility vs report treatments are mutually exclusive": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790522313405
+      }
+    ],
+    "4. Implement pure flood logic (validation, classification, visual mapping, zoom fade)": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790522314528
+      }
+    ],
+    "10. Metro Manila flood-susceptibility polygon rendering + popup": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523441908
+      }
+    ],
+    "13. Map controls": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523442677
+      }
+    ],
+    "13.5 Component tests for controls accessibility": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523444083
+      }
+    ],
+    "14. Origin & Destination markers": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523445555
+      }
+    ],
+    "14.2 Component tests for markers": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523446195
+      }
+    ],
+    "15. Overlays & safety messaging": [
+      {
+        "executionId": "ddedda54-1fdb-49ad-8958-063711069c3e",
+        "chatSessionId": "sess_5b539af3-9fb4-4591-8521-bdbd25e80cf7",
+        "timestamp": 1790523783544
+      }
+    ]
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "name": "baharoute",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "BahaRoute — Metro Manila (NCR) flood-aware travel decision-support map foundation.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json && vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "test": "vitest --run"
+  },
+  "dependencies": {
+    "mapbox-gl": "^3.31.0",
+    "react": "18.3.1",
+    "react-dom": "18.3.1"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "6.6.3",
+    "@testing-library/react": "16.1.0",
+    "@testing-library/user-event": "14.5.2",
+    "@types/geojson": "7946.0.15",
+    "@types/mapbox-gl": "^3.4.1",
+    "@types/node": "^26.6.3",
+    "@types/react": "18.3.18",
+    "@types/react-dom": "18.3.5",
+    "@typescript-eslint/eslint-plugin": "8.19.1",
+    "@typescript-eslint/parser": "8.19.1",
+    "@vitejs/plugin-react": "4.3.4",
+    "eslint": "8.57.1",
+    "eslint-config-prettier": "9.1.0",
+    "eslint-plugin-react-hooks": "4.6.2",
+    "eslint-plugin-react-refresh": "0.4.16",
+    "fast-check": "3.23.2",
+    "jsdom": "25.0.1",
+    "prettier": "3.4.2",
+    "typescript": "5.7.3",
+    "vite": "5.4.11",
+    "vitest": "2.1.8"
+  }
+}

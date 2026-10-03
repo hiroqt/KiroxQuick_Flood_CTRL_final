@@ -1,0 +1,2673 @@
+/*
+ * src/styles/layout.css — Responsive layout for BahaRoute (Task 16).
+ *
+ * Implements the design "Responsive layout strategy" around a single 768px
+ * breakpoint (Req 10):
+ *
+ *   - Mobile  (< 768px): all interactive controls live in the LOWER TWO-THIRDS
+ *     of the viewport height, anchored to the bottom as a floating stack /
+ *     bottom-sheet so they are reachable by thumb (Req 10.1). Every touch
+ *     target is >= 44x44 CSS px (Req 10.4).
+ *   - Desktop (>= 768px): controls are anchored top-right and spaced so none
+ *     overlaps another and each is fully visible in the viewport (Req 10.2).
+ *   - Safe-area insets: env(safe-area-inset-*) padding keeps controls out of a
+ *     device notch / system-bar region (Req 10.3). Requires
+ *     <meta name="viewport" ... viewport-fit=cover> (present in index.html).
+ *
+ * Placement is driven by a CSS custom-property token set that SWITCHES at the
+ * 768px media query (design → "a CSS custom-property token set switches control
+ * placement at the 768px media query"). The default (mobile-first) token set
+ * anchors to the bottom; the >= 768px media query flips the tokens to the
+ * top-right cluster. MapView applies the `.baharoute-controls` class instead of
+ * hardcoded inline positioning.
+ */
+
+/* ----------------------------------------------------------------------------
+ * Placement tokens (mobile-first defaults: lower two-thirds, bottom-anchored).
+ * These are the tokens that the 768px media query overrides for desktop.
+ * ------------------------------------------------------------------------- */
+:root {
+  /* Safe-area insets (0 where unsupported), used by control padding. */
+  --baharoute-safe-top: env(safe-area-inset-top, 0px);
+  --baharoute-safe-right: env(safe-area-inset-right, 0px);
+  --baharoute-safe-bottom: env(safe-area-inset-bottom, 0px);
+  --baharoute-safe-left: env(safe-area-inset-left, 0px);
+
+  /* Minimum interactive touch target (Req 10.4). */
+  --baharoute-touch-target: 44px;
+
+  /* Spacing between stacked controls so none overlaps another. */
+  --baharoute-control-gap: 12px;
+  --baharoute-control-inset: 12px;
+
+  /* Desktop left-panel offsets (single source of truth so every left panel
+   * shares one viewport-aware height and clears the brand + coverage chrome). */
+  --baharoute-panel-top: calc(
+    var(--baharoute-control-inset) + var(--baharoute-safe-top) + 80px
+  );
+  --baharoute-panel-bottom-gap: calc(var(--baharoute-safe-bottom) + 40px);
+
+  /*
+   * Control placement tokens — MOBILE defaults.
+   * Anchor the control cluster to the bottom so it sits within the lower
+   * two-thirds of the viewport height (Req 10.1). `top: auto` releases the top
+   * edge; `max-height: 66vh` keeps the cluster inside the lower two-thirds.
+   */
+  --baharoute-controls-top: auto;
+  --baharoute-controls-right: var(--baharoute-control-inset);
+  --baharoute-controls-bottom: var(--baharoute-control-inset);
+  /* Enhancement: right-edge thumb column instead of a full-width strip. */
+  --baharoute-controls-left: auto;
+  --baharoute-controls-max-height: 66vh;
+  --baharoute-controls-align: flex-end;
+
+  /* Enhancement: surface tokens for floating chrome. */
+  --baharoute-surface: #ffffff;
+  --baharoute-text: #1f2328;
+  --baharoute-text-muted: #5b6168;
+  --baharoute-border: rgba(31, 35, 40, 0.12);
+  --baharoute-radius: 12px;
+  --baharoute-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+  --baharoute-controls-flex-direction: column;
+}
+
+/* ----------------------------------------------------------------------------
+ * App shell + dominant map area: full-viewport map, controls overlaid.
+ * ------------------------------------------------------------------------- */
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  /* Full-screen map app: never scroll the page in either direction. */
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+
+.baharoute-app {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  min-height: 100vh;
+  /* Mobile: 100vh overshoots the visible area behind browser bars. */
+  height: 100dvh;
+  min-height: 100dvh;
+  overflow: hidden;
+}
+
+/* The map area is dominant: it fills the remaining space and the controls are
+ * absolutely positioned overlays on top of it. */
+.baharoute-map-view {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+}
+
+.baharoute-map {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+/* ----------------------------------------------------------------------------
+ * Control cluster — positioned entirely from the placement tokens above, so a
+ * single media query re-anchors it. On mobile these tokens anchor to the bottom
+ * (lower two-thirds); on desktop the media query flips them to top-right.
+ * ------------------------------------------------------------------------- */
+.baharoute-controls {
+  position: absolute;
+  top: var(--baharoute-controls-top);
+  right: var(--baharoute-controls-right);
+  bottom: var(--baharoute-controls-bottom);
+  left: var(--baharoute-controls-left);
+
+  display: flex;
+  flex-direction: var(--baharoute-controls-flex-direction);
+  align-items: var(--baharoute-controls-align);
+  gap: var(--baharoute-control-gap);
+
+  /* Keep the cluster within the lower two-thirds and scrollable if it grows. */
+  max-height: var(--baharoute-controls-max-height);
+  /* Enhancement: visible so the layers popover is not clipped. */
+  overflow: visible;
+
+  z-index: 2;
+
+  /* Safe-area padding so no control renders inside a notch / system bar
+   * (Req 10.3). Adds the device inset on top of the base inset. */
+  padding-top: var(--baharoute-safe-top);
+  padding-right: var(--baharoute-safe-right);
+  padding-bottom: var(--baharoute-safe-bottom);
+  padding-left: var(--baharoute-safe-left);
+
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+/* Only the actual controls receive pointer events; the cluster wrapper is a
+ * pass-through so it never blocks map interaction in its empty regions. */
+.baharoute-controls > * {
+  pointer-events: auto;
+}
+
+/* Reinforce the >= 44x44 CSS px touch target on interactive controls, in
+ * addition to the inline sizing already on the buttons (Req 10.4). */
+.baharoute-controls button,
+.baharoute-controls [role='button'] {
+  min-width: var(--baharoute-touch-target);
+  min-height: var(--baharoute-touch-target);
+}
+
+/* ----------------------------------------------------------------------------
+ * Desktop breakpoint (>= 768px): flip the placement tokens so the cluster is a
+ * spaced top-right column. Anchoring to a single corner with a gap guarantees
+ * no control overlaps another and each is fully visible (Req 10.2).
+ * ------------------------------------------------------------------------- */
+@media (min-width: 768px) {
+  :root {
+    --baharoute-controls-top: var(--baharoute-control-inset);
+    --baharoute-controls-right: var(--baharoute-control-inset);
+    --baharoute-controls-bottom: auto;
+    --baharoute-controls-left: auto;
+    --baharoute-controls-max-height: none;
+    --baharoute-controls-align: flex-end;
+    --baharoute-controls-flex-direction: column;
+  }
+
+  .baharoute-controls {
+    /* On desktop the cluster hugs its content at the top-right rather than
+     * stretching across the bottom. */
+    width: auto;
+  }
+}
+
+/* ----------------------------------------------------------------------------
+ * Accessibility hardening — visible focus indicator (Task 17, Req 11.2).
+ *
+ * Every interactive control carries the `.baharoute-focus-ring` class hook. When
+ * such a control receives keyboard focus, it renders a clearly visible focus
+ * outline drawn in a DEDICATED focus-ring color token (`--baharoute-focus-ring-color`).
+ *
+ * The token is a strong, high-chroma blue chosen so the outline boundary has a
+ * contrast ratio of at least 3:1 against the light control backgrounds it sits
+ * on (Req 11.2). It is deliberately separate from the muted basemap palette and
+ * from the reserved flood palette so it is never confused with map content.
+ *
+ * We prefer :focus-visible (keyboard / programmatic focus, not mouse click) but
+ * provide a plain :focus fallback for engines/tests that do not implement
+ * :focus-visible, so the ring is always visible on keyboard focus. The outline
+ * uses an offset so the ring sits clearly outside the control edge, and a
+ * matching box-shadow "halo" reinforces visibility on controls whose own border
+ * would otherwise sit close to the outline.
+ *
+ * NOTE: This covers the programmatic + visual foundation only. Full WCAG 2.1 AA
+ * conformance (including measured contrast against every real rendered
+ * background and behavior with real assistive technology) still requires manual
+ * AT review and expert verification (design → Accessibility strategy).
+ * ------------------------------------------------------------------------- */
+:root {
+  /* Dedicated focus-ring color (Req 11.2). Strong blue, >= 3:1 against the
+   * light (near-white) control surfaces used by the controls. */
+  --baharoute-focus-ring-color: #1a56db;
+  /* Focus outline geometry. */
+  --baharoute-focus-ring-width: 3px;
+  --baharoute-focus-ring-offset: 2px;
+}
+
+/* :focus fallback — always show the ring on focus for engines without
+ * :focus-visible support (and for the test environment). */
+.baharoute-focus-ring:focus {
+  outline: var(--baharoute-focus-ring-width) solid
+    var(--baharoute-focus-ring-color);
+  outline-offset: var(--baharoute-focus-ring-offset);
+  /* Reinforcing halo so the boundary stays visible even where the control's own
+   * border sits near the outline. */
+  box-shadow: 0 0 0 var(--baharoute-focus-ring-offset)
+    var(--baharoute-focus-ring-color);
+}
+
+/* :focus-visible — the preferred path. Suppress the plain-:focus ring for mouse
+ * users on engines that support :focus-visible, while keeping it for keyboard
+ * focus. */
+.baharoute-focus-ring:focus:not(:focus-visible) {
+  outline: none;
+  box-shadow: none;
+}
+
+.baharoute-focus-ring:focus-visible {
+  outline: var(--baharoute-focus-ring-width) solid
+    var(--baharoute-focus-ring-color);
+  outline-offset: var(--baharoute-focus-ring-offset);
+  box-shadow: 0 0 0 var(--baharoute-focus-ring-offset)
+    var(--baharoute-focus-ring-color);
+}
+
+/* ============================================================================
+ * Enhancement: map UI/UX polish (floating chrome, layers panel, legend, popup)
+ * ========================================================================= */
+
+.baharoute-app {
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  color: var(--baharoute-text);
+}
+
+.baharoute-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* --- Brand pill (replaces the full-width header) ------------------------- */
+.baharoute-brand {
+  position: absolute;
+  top: calc(var(--baharoute-control-inset) + var(--baharoute-safe-top));
+  left: calc(var(--baharoute-control-inset) + var(--baharoute-safe-left));
+  z-index: 3;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 14px;
+  background: var(--baharoute-surface);
+  border-radius: 999px;
+  box-shadow: var(--baharoute-shadow);
+  pointer-events: none;
+}
+.baharoute-brand__name {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--baharoute-focus-ring-color);
+}
+.baharoute-brand__scope {
+  font-size: 13px;
+  color: var(--baharoute-text-muted);
+}
+
+/* Demo badge sits just under the brand pill. */
+.baharoute-demo-badge {
+  position: absolute;
+  top: calc(var(--baharoute-control-inset) + var(--baharoute-safe-top) + 46px);
+  left: calc(var(--baharoute-control-inset) + var(--baharoute-safe-left));
+  z-index: 3;
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #7a4b00;
+  background: #fff4d6;
+  border: 1px solid #f0d58a;
+  border-radius: 999px;
+}
+
+/* --- Floating control buttons -------------------------------------------- */
+.baharoute-control-card {
+  display: flex;
+  flex-direction: column;
+  background: var(--baharoute-surface);
+  border-radius: var(--baharoute-radius);
+  box-shadow: var(--baharoute-shadow);
+  overflow: hidden;
+}
+.baharoute-control-card > button + button {
+  border-top: 1px solid var(--baharoute-border);
+}
+.baharoute-control-card button,
+.baharoute-round-button {
+  width: var(--baharoute-touch-target);
+  height: var(--baharoute-touch-target);
+  padding: 0;
+  border: 0;
+  background: var(--baharoute-surface);
+  color: var(--baharoute-text);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.baharoute-round-button {
+  border-radius: var(--baharoute-radius);
+  box-shadow: var(--baharoute-shadow);
+}
+.baharoute-control-card .baharoute-round-button {
+  box-shadow: none;
+  border-radius: 0;
+}
+.baharoute-control-card button:hover,
+.baharoute-round-button:hover {
+  background: #f1f3f5;
+}
+.baharoute-round-button[aria-expanded='true'] {
+  color: var(--baharoute-focus-ring-color);
+}
+
+/* 2D/3D toggle: text glyph, pressed state shown by color + inset outline. */
+.baharoute-view-mode-control {
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+.baharoute-view-mode-control[aria-pressed='true'] {
+  color: var(--baharoute-focus-ring-color);
+  box-shadow: inset 0 0 0 2px currentColor;
+}
+
+/* Report-flooding control: inherits the shared control-card button sizing;
+ * shows an amber accent and a pressed state while report-pick mode is active. */
+.baharoute-report-flood {
+  font-size: 18px;
+  color: #b45309;
+}
+.baharoute-report-flood[aria-pressed='true'] {
+  color: #b45309;
+  box-shadow: inset 0 0 0 2px currentColor;
+}
+
+/* Location status message as a small toast next to the button. */
+.baharoute-location-control {
+  position: relative;
+}
+.baharoute-control-message {
+  position: absolute;
+  right: calc(100% + 8px);
+  top: 50%;
+  transform: translateY(-50%);
+  width: max-content;
+  max-width: 220px;
+  margin: 0;
+  padding: 8px 12px;
+  font-size: 13px;
+  background: var(--baharoute-text);
+  color: #fff;
+  border-radius: 8px;
+}
+
+.baharoute-icon-button {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--baharoute-text-muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.baharoute-icon-button:hover {
+  background: #f1f3f5;
+}
+
+/* --- Layers panel ---------------------------------------------------------- */
+.baharoute-layers {
+  position: relative;
+}
+.baharoute-layers__panel {
+  position: absolute;
+  right: calc(100% + 8px);
+  /* Enhancement fix: open downward from the button so the panel never
+     grows past the top of the viewport (controls sit top-right on desktop). */
+  top: 0;
+  /* Phase 3: slightly more compact so the map stays dominant. */
+  width: 232px;
+  max-height: calc(100vh - 2 * var(--baharoute-control-inset));
+  overflow: auto;
+  padding: 10px 12px;
+  background: var(--baharoute-surface);
+  border-radius: var(--baharoute-radius);
+  box-shadow: var(--baharoute-shadow);
+  box-sizing: border-box;
+}
+.baharoute-layers__panel[hidden] {
+  display: none;
+}
+.baharoute-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 4px;
+}
+.baharoute-panel-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+.baharoute-layer-item label {
+  min-height: var(--baharoute-touch-target);
+  font-size: 14px;
+}
+.baharoute-layer-item + .baharoute-layer-item {
+  border-top: 1px solid var(--baharoute-border);
+}
+.baharoute-layer-checkbox {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--baharoute-focus-ring-color);
+}
+.baharoute-layer-label {
+  flex: 1 1 auto;
+}
+.baharoute-layer-state {
+  font-size: 12px;
+  color: var(--baharoute-text-muted);
+}
+
+/* --- Legend ---------------------------------------------------------------- */
+.baharoute-legend {
+  position: absolute;
+  left: calc(var(--baharoute-control-inset) + var(--baharoute-safe-left));
+  bottom: calc(var(--baharoute-control-inset) + var(--baharoute-safe-bottom) + 24px);
+  z-index: 2;
+  max-width: 240px;
+  /* Enhancement fix: expanded legend stays below the brand pill/demo badge. */
+  max-height: calc(100vh - 160px);
+  overflow: auto;
+  background: var(--baharoute-surface);
+  border-radius: var(--baharoute-radius);
+  box-shadow: var(--baharoute-shadow);
+  font-size: 13px;
+}
+.baharoute-legend__toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-height: var(--baharoute-touch-target);
+  padding: 0 12px;
+  border: 0;
+  background: transparent;
+  border-radius: var(--baharoute-radius);
+  font: inherit;
+  font-weight: 600;
+  color: var(--baharoute-text);
+  cursor: pointer;
+}
+.baharoute-legend__body {
+  padding: 0 12px 12px;
+}
+.baharoute-legend__body[hidden] {
+  display: none;
+}
+.baharoute-legend__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 6px;
+}
+.baharoute-legend__item {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  column-gap: 8px;
+  align-items: center;
+}
+.baharoute-legend__swatch {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  opacity: 0.75;
+}
+.baharoute-legend__swatch--hatched {
+  background-image: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.7) 0 2px,
+    transparent 2px 5px
+  );
+}
+.baharoute-legend__hint {
+  grid-column: 2;
+  font-size: 12px;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-legend__note {
+  margin: 10px 0 0;
+  font-size: 12px;
+  color: var(--baharoute-text-muted);
+}
+
+/* --- Popup: bottom sheet on mobile, floating card on desktop -------------- */
+.baharoute-popup-host {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 4;
+  max-height: 60vh;
+  overflow: auto;
+  padding: 16px 16px calc(16px + var(--baharoute-safe-bottom));
+  background: var(--baharoute-surface);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
+  box-sizing: border-box;
+}
+.baharoute-popup-close {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+}
+.baharoute-flood-popup__title {
+  margin: 0 40px 8px 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+.baharoute-flood-popup__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 4px 10px;
+  font-size: 13px;
+  font-weight: 600;
+  background: #f1f3f5;
+  border-radius: 999px;
+}
+.baharoute-flood-popup__swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+.baharoute-flood-popup__fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0 0 12px;
+  font-size: 13px;
+}
+.baharoute-flood-popup__fields dt {
+  color: var(--baharoute-text-muted);
+}
+.baharoute-flood-popup__fields dd {
+  margin: 0;
+}
+.baharoute-flood-popup .baharoute-disclaimer,
+.baharoute-flood-popup [role='note'] {
+  margin: 0;
+  font-size: 12px;
+  color: var(--baharoute-text-muted);
+}
+
+@media (min-width: 768px) {
+  .baharoute-popup-host {
+    left: calc(var(--baharoute-control-inset) + var(--baharoute-safe-left));
+    right: auto;
+    top: calc(var(--baharoute-control-inset) + var(--baharoute-safe-top) + 80px);
+    bottom: auto;
+    width: 320px;
+    max-height: calc(100vh - 200px);
+    border-radius: var(--baharoute-radius);
+    box-shadow: var(--baharoute-shadow);
+  }
+  .baharoute-legend {
+    bottom: calc(var(--baharoute-control-inset) + var(--baharoute-safe-bottom) + 24px);
+  }
+}
+
+@media (max-width: 767px) {
+  /* Layers panel becomes a bottom sheet on small screens. It sits ABOVE any
+   * open left-panel sheet (explore/insights z6/z7) so opening Layers fully
+   * REPLACES the visible sheet rather than stacking a second one beneath it;
+   * closing Layers reveals the previous sheet again (one visible sheet at a
+   * time). Height is map-first so the map stays visible behind it. */
+  .baharoute-layers__panel {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: auto;
+    padding-bottom: calc(12px + var(--baharoute-safe-bottom));
+    border-radius: 16px 16px 0 0;
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
+    z-index: 9;
+  }
+
+  /* Keep the map controls reachable above any open bottom sheet: raise them
+   * over the sheet (z10) and lift the cluster above a half-height sheet while
+   * one is open, so zoom / recenter / 3D / location / report / layers never
+   * get covered. When no sheet is open they return to the bottom inset. */
+  .baharoute-controls {
+    z-index: 10;
+  }
+  .baharoute-controls[data-sheet-open='true'] {
+    --baharoute-controls-bottom: calc(42dvh + var(--baharoute-control-inset));
+  }
+}
+
+/* --- Driving mode HUD (simulated drive) ----------------------------------- */
+.baharoute-drive-hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: calc(12px + env(safe-area-inset-top, 0px)) 12px
+    calc(12px + env(safe-area-inset-bottom, 0px));
+  gap: 8px;
+  box-sizing: border-box;
+  overflow: hidden;
+}
+.baharoute-drive-hud > * {
+  pointer-events: auto;
+  width: 100%;
+  max-width: 520px;
+  min-width: 0;
+  box-sizing: border-box;
+  flex-shrink: 0;
+}
+.baharoute-drive-banner {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 14px 16px;
+  border-radius: var(--baharoute-radius);
+  background: #1f3b2d;
+  color: #ffffff;
+  box-shadow: var(--baharoute-shadow);
+}
+.baharoute-drive-banner__icon {
+  flex: none;
+  width: 48px;
+  font-size: 40px;
+  line-height: 1;
+  font-weight: 700;
+  text-align: center;
+}
+.baharoute-drive-banner__text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.baharoute-drive-banner__distance {
+  font-size: 26px;
+  line-height: 1.1;
+}
+.baharoute-drive-banner__instruction {
+  font-size: 16px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.baharoute-drive-hazard {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  border-radius: var(--baharoute-radius);
+  border-left: 6px solid;
+  background: var(--baharoute-surface);
+  color: var(--baharoute-text);
+  box-shadow: var(--baharoute-shadow);
+  font-size: 14px;
+}
+.baharoute-drive-hazard__dot {
+  flex: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+}
+.baharoute-drive-hazard__source {
+  display: block;
+  color: var(--baharoute-text-muted);
+  font-size: 12px;
+}
+.baharoute-drive-bar {
+  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 14px;
+  border-radius: var(--baharoute-radius);
+  background: var(--baharoute-surface);
+  color: var(--baharoute-text);
+  box-shadow: var(--baharoute-shadow);
+}
+.baharoute-drive-bar__trip {
+  display: flex;
+  flex-direction: column;
+}
+.baharoute-drive-bar__trip strong {
+  font-size: 20px;
+}
+.baharoute-drive-bar__trip span {
+  color: var(--baharoute-text-muted);
+  font-size: 14px;
+}
+.baharoute-drive-bar__options {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.baharoute-segmented {
+  display: inline-flex;
+  border: 1px solid var(--baharoute-border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.baharoute-segmented__option {
+  min-height: var(--baharoute-touch-target);
+  padding: 0 12px;
+  border: 0;
+  background: var(--baharoute-surface);
+  color: var(--baharoute-text);
+  font-size: 14px;
+  cursor: pointer;
+}
+.baharoute-segmented__option[aria-pressed='true'] {
+  background: var(--baharoute-focus-ring-color);
+  color: #ffffff;
+  font-weight: 700;
+}
+.baharoute-drive-bar__stop {
+  min-height: var(--baharoute-touch-target);
+  padding: 0 18px;
+  border: 0;
+  border-radius: 999px;
+  /* Neutral dark: red is reserved for flood states. */
+  background: var(--baharoute-text);
+  color: #ffffff;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+/* Reroute choice (driving mode). */
+.baharoute-reroute {
+  padding: 14px 16px;
+  border-radius: var(--baharoute-radius);
+  border-top: 6px solid;
+  background: var(--baharoute-surface);
+  color: var(--baharoute-text);
+  box-shadow: var(--baharoute-shadow);
+}
+.baharoute-reroute__title {
+  margin: 0;
+  font-size: 18px;
+}
+.baharoute-reroute__desc {
+  margin: 4px 0 10px;
+  color: var(--baharoute-text-muted);
+  font-size: 14px;
+}
+.baharoute-reroute__options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.baharoute-reroute__option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  min-height: var(--baharoute-touch-target);
+  padding: 10px 14px;
+  border: 1px solid var(--baharoute-border);
+  border-radius: var(--baharoute-radius);
+  background: var(--baharoute-surface);
+  color: var(--baharoute-text);
+  font-size: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+.baharoute-reroute__option--primary {
+  border-color: var(--baharoute-focus-ring-color);
+  background: var(--baharoute-focus-ring-color);
+  color: #ffffff;
+}
+
+/* Driver POV on phones: compact HUD so it fits the viewport with no scroll,
+ * leaving the road visible between the banner and the bottom bar. */
+@media (max-width: 767px) {
+  .baharoute-drive-hud {
+    padding: calc(8px + env(safe-area-inset-top, 0px))
+      calc(8px + env(safe-area-inset-right, 0px))
+      calc(8px + env(safe-area-inset-bottom, 0px))
+      calc(8px + env(safe-area-inset-left, 0px));
+    gap: 6px;
+  }
+  .baharoute-drive-banner {
+    gap: 10px;
+    padding: 10px 12px;
+  }
+  .baharoute-drive-banner__icon {
+    width: 36px;
+    font-size: 30px;
+  }
+  .baharoute-drive-banner__distance {
+    font-size: 22px;
+  }
+  .baharoute-drive-banner__instruction {
+    font-size: 14px;
+    white-space: nowrap;
+  }
+  .baharoute-drive-hazard {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  .baharoute-drive-bar {
+    gap: 8px;
+    padding: 10px 12px;
+  }
+  .baharoute-drive-bar__trip strong {
+    font-size: 18px;
+  }
+  .baharoute-drive-bar__trip span {
+    font-size: 13px;
+  }
+  .baharoute-drive-bar__options {
+    width: 100%;
+    flex-wrap: nowrap;
+    justify-content: space-between;
+    gap: 6px;
+  }
+  .baharoute-segmented {
+    min-width: 0;
+  }
+  .baharoute-segmented__option {
+    padding: 0 10px;
+    font-size: 13px;
+    white-space: nowrap;
+  }
+  .baharoute-drive-bar__stop {
+    flex: none;
+    padding: 0 14px;
+  }
+  /* Reroute card: cap height; the card itself never scrolls the page. */
+  .baharoute-reroute {
+    padding: 10px 12px;
+    max-height: 40dvh;
+    overflow: hidden;
+  }
+  .baharoute-reroute__title {
+    font-size: 16px;
+  }
+  .baharoute-reroute__desc {
+    margin: 2px 0 8px;
+    font-size: 13px;
+  }
+  .baharoute-reroute__option {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+}
+
+/* --- Barangay info panel + live-status banner (current flood risk) -------- */
+/* --- Barangay info panel (commuter redesign) ----------------------------- */
+.baharoute-barangay-panel__title {
+  margin: 0 40px 2px 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+.baharoute-barangay-panel__city {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-barangay-panel__eyebrow {
+  margin: 0 0 2px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-barangay-panel__risk {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px;
+}
+.baharoute-barangay-panel__risk-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  flex: none;
+}
+.baharoute-barangay-panel__risk-label {
+  font-size: 22px;
+  font-weight: 800;
+  line-height: 1.1;
+}
+.baharoute-barangay-panel__explain {
+  margin: 0 0 12px;
+  font-size: 13px;
+  color: var(--baharoute-text);
+}
+.baharoute-barangay-panel__primary {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 0 0 12px;
+}
+.baharoute-barangay-panel__primary > div {
+  background: #f1f3f5;
+  border-radius: 10px;
+  padding: 8px 10px;
+}
+.baharoute-barangay-panel__primary dt {
+  margin: 0 0 2px;
+  font-size: 11px;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-barangay-panel__primary dd {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+.baharoute-barangay-panel__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex: none;
+}
+.baharoute-barangay-panel__why {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  background: #f8f9fa;
+  border-radius: 10px;
+}
+.baharoute-barangay-panel__why-title {
+  margin: 0 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+}
+.baharoute-barangay-panel__why ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--baharoute-text);
+}
+.baharoute-barangay-panel__why li {
+  margin: 2px 0;
+}
+.baharoute-barangay-panel__more {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 0 8px;
+  padding: 4px 0;
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--baharoute-accent, #1a73e8);
+}
+.baharoute-barangay-panel__details {
+  margin: 0 0 12px;
+}
+.baharoute-barangay-panel .baharoute-flood-popup__fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0 0 12px;
+  font-size: 12px;
+}
+.baharoute-barangay-panel .baharoute-flood-popup__fields dt {
+  color: var(--baharoute-text-muted);
+}
+.baharoute-barangay-panel .baharoute-flood-popup__fields dd {
+  margin: 0;
+}
+.baharoute-barangay-panel [role='note'] {
+  margin: 0;
+  font-size: 12px;
+  color: var(--baharoute-text-muted);
+}
+
+/* --- Report / closure popup ---------------------------------------------- */
+.baharoute-report-popup .baharoute-flood-popup__fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 8px 0 12px;
+  font-size: 13px;
+}
+.baharoute-report-popup .baharoute-flood-popup__fields dt {
+  color: var(--baharoute-text-muted);
+}
+.baharoute-report-popup .baharoute-flood-popup__fields dd {
+  margin: 0;
+}
+.baharoute-report-popup [role='note'] {
+  margin: 0;
+  font-size: 12px;
+  color: var(--baharoute-text-muted);
+}
+
+/* --- Legend headings + grouped layer control ----------------------------- */
+.baharoute-legend__heading {
+  margin: 12px 0 4px;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-legend__heading:first-of-type {
+  margin-top: 0;
+}
+.baharoute-layer-group + .baharoute-layer-group {
+  margin-top: 12px;
+}
+.baharoute-layer-group__title {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-layer-item {
+  padding: 5px 0;
+}
+.baharoute-layer-item .baharoute-layer-checkbox {
+  width: 18px;
+  height: 18px;
+}
+
+/* --- Compact live-data status pill --------------------------------------- */
+.baharoute-status-pill {
+  position: absolute;
+  top: calc(var(--baharoute-control-inset) + var(--baharoute-safe-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(92vw, 360px);
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--baharoute-text);
+  background: var(--baharoute-surface, #fff);
+  border-radius: 999px;
+  box-shadow: var(--baharoute-shadow);
+  white-space: nowrap;
+}
+.baharoute-status-pill__dot {
+  font-size: 11px;
+  line-height: 1;
+}
+.baharoute-status-pill__dot--live {
+  color: #2e7d32;
+}
+.baharoute-status-pill__dot--warn {
+  color: #b45309;
+}
+.baharoute-status-pill__text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* --- Short-term risk timeline (NOW / +30 / +1hr) ------------------------- */
+.baharoute-timeline {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin: 0 40px 12px 0;
+  padding: 3px;
+  background: #eef0f2;
+  border-radius: 999px;
+}
+.baharoute-timeline__step {
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--baharoute-text-muted);
+  border-radius: 999px;
+}
+.baharoute-timeline__step--active {
+  background: var(--baharoute-surface, #fff);
+  color: var(--baharoute-text);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.15);
+}
+.baharoute-timeline__est {
+  font-size: 10px;
+  font-style: italic;
+  color: var(--baharoute-text-muted);
+  padding-right: 6px;
+}
+
+/* --- Mobile: bottom-sheet panel, thumb-friendly, no overlaps ------------- */
+@media (max-width: 767px) {
+  .baharoute-status-pill {
+    /* Sit BELOW the brand pill row on narrow screens so the two never overlap
+     * (the brand pill occupies the top-left line). Stays horizontally centered
+     * but on its own row. */
+    top: calc(var(--baharoute-safe-top) + 52px);
+    font-size: 11px;
+    max-width: 88vw;
+  }
+  .baharoute-barangay-panel__primary {
+    gap: 6px;
+  }
+  .baharoute-barangay-panel__risk-label {
+    font-size: 20px;
+  }
+  .baharoute-timeline {
+    margin-right: 0;
+  }
+  .baharoute-timeline__step {
+    padding: 8px 14px; /* larger touch targets */
+    font-size: 13px;
+  }
+  /* The popup host is already a bottom sheet on mobile (existing rule);
+     ensure the timeline sits at the top of that sheet and controls clear it. */
+  .baharoute-popup-host {
+    max-height: 66vh;
+  }
+}
+
+/* --- Phase 3: legend history sub-toggle + history context message -------- */
+.baharoute-legend__subtoggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  margin: 10px 0 0;
+  padding: 6px 0 0;
+  border: none;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+  background: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--baharoute-text-muted);
+}
+
+.baharoute-history-context {
+  position: absolute;
+  top: calc(var(--baharoute-control-inset) + var(--baharoute-safe-top) + 38px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 5;
+  max-width: min(92vw, 420px);
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  color: #5f5030;
+  background: #fbf3df;
+  border-radius: 999px;
+  box-shadow: var(--baharoute-shadow);
+}
+
+/* Phase 3: tighten the grouped layer control so the panel reads compact. */
+.baharoute-layer-group + .baharoute-layer-group {
+  margin-top: 10px;
+}
+.baharoute-layer-item {
+  padding: 4px 0;
+}
+
+@media (max-width: 767px) {
+  .baharoute-layers__panel {
+    /* On mobile the layers drawer is a bottom sheet; keep it clear of the
+       details bottom-sheet by capping its height so they never fully overlap. */
+    max-height: 45vh;
+  }
+  .baharoute-history-context {
+    top: calc(var(--baharoute-safe-top) + 44px);
+    font-size: 11px;
+    max-width: 88vw;
+  }
+}
+
+/* --- Phase 4: layer status suffix + empty-drawer hint -------------------- */
+.baharoute-layer-status {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  color: #b45309;
+  white-space: nowrap;
+}
+.baharoute-layer-hint {
+  margin: 10px 2px 2px;
+  font-size: 12px;
+  color: var(--baharoute-text-muted);
+}
+
+/* --- Coverage scope badge (NCR-only) ------------------------------------- */
+.baharoute-coverage-badge {
+  position: absolute;
+  bottom: calc(var(--baharoute-safe-bottom) + 6px);
+  left: calc(var(--baharoute-control-inset) + var(--baharoute-safe-left));
+  z-index: 3;
+  padding: 3px 9px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: #4b5563;
+  background: rgba(255, 255, 255, 0.86);
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  border-radius: 999px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+@media (max-width: 767px) {
+  .baharoute-coverage-badge {
+    font-size: 10px;
+    /* Sit above the mobile bottom sheet / attribution comfortably. */
+    bottom: calc(var(--baharoute-safe-bottom) + 4px);
+  }
+}
+
+/* --- Map Context selector (NCR-only ↔ nearby areas) ---------------------- */
+.baharoute-map-context {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(0, 0, 0, 0.08);
+}
+.baharoute-map-context__title {
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-map-context__options {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.baharoute-map-context__option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  font-size: 13px;
+  cursor: pointer;
+}
+.baharoute-map-context__option input {
+  width: 16px;
+  height: 16px;
+  flex: none;
+}
+
+/* --- Rotate / compass control -------------------------------------------- */
+.baharoute-control-card--rotate {
+  flex-direction: row;
+  background: transparent;
+  box-shadow: none;
+  gap: 6px;
+}
+.baharoute-rotate-control {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 6px;
+}
+.baharoute-rotate-control__needle {
+  display: inline-flex;
+  transition: transform 120ms ease-out;
+}
+
+/* ==========================================================================
+ * Trip flow: Search → Compare panels + Driver-Mode route-risk banner.
+ * Mobile-first (bottom sheet); desktop (>=768px) becomes a floating left card,
+ * mirroring the popup-host pattern so both never overlap the control cluster.
+ * ========================================================================== */
+
+/* Recoverable "Route ready" chip (shown when a route exists but another panel
+ * is the primary left panel). Compact, bottom-left, above the coverage badge. */
+.baharoute-route-chip {
+  position: absolute;
+  left: calc(var(--baharoute-control-inset) + var(--baharoute-safe-left));
+  bottom: calc(var(--baharoute-safe-bottom) + 40px);
+  z-index: 6;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 1px;
+  min-height: var(--baharoute-touch-target);
+  padding: 8px 14px;
+  border: 1px solid var(--baharoute-border, #cbd2d9);
+  border-radius: 12px;
+  background: var(--baharoute-surface, #fff);
+  box-shadow: var(--baharoute-shadow);
+  cursor: pointer;
+  text-align: left;
+}
+.baharoute-route-chip__title {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--baharoute-text);
+}
+.baharoute-route-chip__meta {
+  font-size: 12px;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-route-chip__cta {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--baharoute-focus-ring-color);
+}
+
+.baharoute-trip-host {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  max-height: 72vh;
+  overflow: auto;
+  padding: 16px 16px calc(16px + var(--baharoute-safe-bottom));
+  background: var(--baharoute-surface);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
+  box-sizing: border-box;
+}
+
+.baharoute-trip-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  color: var(--baharoute-text);
+}
+.baharoute-trip-panel__header {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.baharoute-trip-panel__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+.baharoute-trip-panel__subtitle {
+  margin: 0;
+  font-size: 13px;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-trip-panel__back {
+  align-self: flex-start;
+  min-height: var(--baharoute-touch-target);
+  padding: 4px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--baharoute-focus-ring-color);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.baharoute-trip-panel__notice {
+  margin: 0;
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--baharoute-text);
+  background: #fff4e5;
+  border: 1px solid #f0c684;
+  border-radius: 8px;
+}
+.baharoute-trip-panel__primary {
+  min-height: var(--baharoute-touch-target);
+  padding: 12px 16px;
+  border: 0;
+  border-radius: var(--baharoute-radius);
+  background: var(--baharoute-focus-ring-color);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.baharoute-trip-panel__primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* --- Search fields -------------------------------------------------------- */
+.baharoute-search-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.baharoute-search-field__label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-search-field__input {
+  min-height: var(--baharoute-touch-target);
+  padding: 10px 12px;
+  font-size: 15px;
+  border: 1px solid var(--baharoute-border);
+  border-radius: 10px;
+  background: #fff;
+  color: var(--baharoute-text);
+  box-sizing: border-box;
+}
+.baharoute-search-field__chosen {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: var(--baharoute-touch-target);
+  padding: 8px 10px 8px 12px;
+  border: 1px solid var(--baharoute-border);
+  border-radius: 10px;
+  background: #f6f8fa;
+}
+.baharoute-search-field__value {
+  font-size: 15px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.baharoute-search-field__clear {
+  flex: none;
+  min-height: 36px;
+  padding: 6px 10px;
+  border: 0;
+  background: transparent;
+  color: var(--baharoute-focus-ring-color);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 8px;
+}
+.baharoute-search-field__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.baharoute-chip-button {
+  min-height: 40px;
+  padding: 6px 12px;
+  border: 1px solid var(--baharoute-border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--baharoute-text);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.baharoute-chip-button[aria-pressed='true'] {
+  border-color: var(--baharoute-focus-ring-color);
+  color: var(--baharoute-focus-ring-color);
+  box-shadow: inset 0 0 0 1px var(--baharoute-focus-ring-color);
+}
+
+/* --- Place suggestions ---------------------------------------------------- */
+.baharoute-place-suggestions {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--baharoute-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: #fff;
+}
+.baharoute-place-suggestions li + li {
+  border-top: 1px solid var(--baharoute-border);
+}
+.baharoute-place-suggestions__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  min-height: var(--baharoute-touch-target);
+  padding: 8px 12px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+.baharoute-place-suggestions__item:hover {
+  background: #f1f3f5;
+}
+.baharoute-place-suggestions__name {
+  font-size: 15px;
+  font-weight: 600;
+}
+.baharoute-place-suggestions__area {
+  font-size: 12px;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-place-suggestions__empty {
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--baharoute-text-muted);
+}
+
+/* --- Compare: route cards ------------------------------------------------- */
+.baharoute-route-cards {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.baharoute-route-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--baharoute-border);
+  border-radius: var(--baharoute-radius);
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+.baharoute-route-card--selected {
+  border-color: var(--baharoute-focus-ring-color);
+  box-shadow: inset 0 0 0 2px var(--baharoute-focus-ring-color);
+}
+.baharoute-route-card__top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.baharoute-route-card__badge {
+  padding: 3px 10px;
+  font-size: 12px;
+  font-weight: 700;
+  border-radius: 999px;
+  background: #eef1f4;
+  color: var(--baharoute-text);
+}
+.baharoute-route-card__badge--recommended {
+  background: #e6f4ea;
+  color: #1a7f37;
+}
+.baharoute-route-card__badge--lowerRiskAlternative {
+  background: #e7f0fb;
+  color: #1a56db;
+}
+.baharoute-route-card__badge--higherFloodExposure {
+  background: #fdecea;
+  color: #b42318;
+}
+.baharoute-route-card__badge--unavailable {
+  background: #f1f3f5;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-route-card__label {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-route-card__primary {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 14px;
+}
+.baharoute-route-card__eta {
+  font-size: 18px;
+  font-weight: 700;
+}
+.baharoute-route-card__sep {
+  color: var(--baharoute-text-muted);
+}
+.baharoute-route-card__arrive {
+  color: var(--baharoute-text-muted);
+}
+.baharoute-route-card__facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+.baharoute-route-card__fact {
+  display: flex;
+  flex-direction: column;
+}
+.baharoute-route-card__fact dt {
+  color: var(--baharoute-text-muted);
+  font-size: 12px;
+}
+.baharoute-route-card__fact dd {
+  margin: 0;
+  font-weight: 600;
+}
+.baharoute-route-card__why {
+  border-top: 1px solid var(--baharoute-border);
+  padding-top: 8px;
+}
+.baharoute-route-card__why-title {
+  display: block;
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--baharoute-text-muted);
+  margin-bottom: 4px;
+}
+.baharoute-route-card__why ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+.baharoute-route-card__why li {
+  margin: 2px 0;
+}
+
+/* --- Driver-Mode route-risk banner (thin, persistent) --------------------- */
+.baharoute-drive-risk {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: var(--baharoute-surface);
+  box-shadow: var(--baharoute-shadow);
+  font-size: 14px;
+}
+.baharoute-drive-risk__label {
+  font-weight: 700;
+}
+.baharoute-drive-risk__sep {
+  color: var(--baharoute-text-muted);
+}
+.baharoute-drive-risk__freshness {
+  color: var(--baharoute-text-muted);
+}
+
+/* Desktop: trip panels become a floating left card (like the popup host),
+   clearing the brand chip at the top and leaving the map dominant. */
+@media (min-width: 768px) {
+  .baharoute-trip-host {
+    left: calc(var(--baharoute-control-inset) + var(--baharoute-safe-left));
+    right: auto;
+    top: var(--baharoute-panel-top);
+    bottom: auto;
+    width: 340px;
+    /* Viewport-aware: never extend past the bottom; keep brand + coverage
+     * visible. Falls back to vh on engines without dvh. */
+    max-height: calc(100vh - var(--baharoute-panel-top) - var(--baharoute-panel-bottom-gap));
+    max-height: calc(100dvh - var(--baharoute-panel-top) - var(--baharoute-panel-bottom-gap));
+    border-radius: var(--baharoute-radius);
+    box-shadow: var(--baharoute-shadow);
+  }
+}
+
+/* ==========================================================================
+ * Location privacy: consent dialog, subtle privacy status, select-on-map banner.
+ * ========================================================================== */
+
+/* --- Consent dialog (modal) ---------------------------------------------- */
+.baharoute-consent-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(15, 18, 22, 0.45);
+}
+.baharoute-consent-dialog {
+  width: 100%;
+  max-width: 380px;
+  padding: 20px;
+  background: var(--baharoute-surface);
+  color: var(--baharoute-text);
+  border-radius: var(--baharoute-radius);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.28);
+  box-sizing: border-box;
+}
+.baharoute-consent-dialog__title {
+  margin: 0 0 8px;
+  font-size: 18px;
+  font-weight: 700;
+}
+.baharoute-consent-dialog__body {
+  margin: 0 0 18px;
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-consent-dialog__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.baharoute-consent-dialog__decline,
+.baharoute-consent-dialog__allow {
+  min-height: var(--baharoute-touch-target);
+  padding: 10px 16px;
+  border-radius: 10px;
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.baharoute-consent-dialog__decline {
+  border: 1px solid var(--baharoute-border);
+  background: #fff;
+  color: var(--baharoute-text);
+}
+.baharoute-consent-dialog__allow {
+  border: 0;
+  background: var(--baharoute-focus-ring-color);
+  color: #fff;
+}
+
+/* --- Subtle privacy status (never an error) ------------------------------ */
+.baharoute-location-status {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--baharoute-text-muted);
+}
+/* Denied / unavailable stay neutral-but-informative, not alarming red. */
+.baharoute-location-status[data-status='denied'],
+.baharoute-location-status[data-status='unavailable'] {
+  color: #7a5b00;
+}
+
+/* --- Select-on-map mode banner ------------------------------------------- */
+.baharoute-select-banner {
+  position: absolute;
+  top: calc(var(--baharoute-control-inset) + var(--baharoute-safe-top) + 46px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 7;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 14px;
+  background: var(--baharoute-surface);
+  color: var(--baharoute-text);
+  border-radius: 999px;
+  box-shadow: var(--baharoute-shadow);
+  font-size: 14px;
+  font-weight: 600;
+}
+.baharoute-select-banner__cancel {
+  flex: none;
+  min-height: 32px;
+  padding: 4px 12px;
+  border: 1px solid var(--baharoute-border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--baharoute-focus-ring-color);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* Disabled Find routes must not look like an active blue action. */
+.baharoute-trip-panel__primary:disabled {
+  background: #e3e6ea;
+  color: var(--baharoute-text-muted);
+}
+
+/* Route-search hint / auto "Finding routes…" status (replaces the old button). */
+.baharoute-trip-panel__hint {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--baharoute-text-muted);
+  text-align: center;
+}
+
+/* ==========================================================================
+ * Flood Insights (unified Current / Historical panel) + Historical Explore
+ * Mobile: bottom sheet (collapsed / half / full). Desktop: left-side card.
+ * The map stays the dominant visual element.
+ * ========================================================================== */
+.baharoute-insights-host {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 7;
+  box-sizing: border-box;
+}
+
+.baharoute-insights {
+  display: flex;
+  flex-direction: column;
+  background: var(--baharoute-surface);
+  color: var(--baharoute-text);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
+  box-sizing: border-box;
+  overflow: hidden;
+  max-height: 88vh;
+}
+/* Mobile sheet heights driven by data-sheet. MAP-FIRST: the half state keeps
+ * ~58% of the viewport as map; full is reached only by explicit expansion. */
+.baharoute-insights[data-sheet='collapsed'] {
+  max-height: 96px;
+}
+.baharoute-insights[data-sheet='half'] {
+  max-height: 42dvh;
+}
+.baharoute-insights[data-sheet='full'] {
+  max-height: 88dvh;
+}
+.baharoute-insights__handle {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 8px 12px 4px;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.baharoute-insights__grip {
+  width: 36px;
+  height: 4px;
+  border-radius: 999px;
+  background: #cbd2d9;
+}
+.baharoute-insights__collapsed-summary {
+  font-size: 13px;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-insights__head {
+  display: flex;
+  flex: none;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 16px 8px;
+}
+.baharoute-insights__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+.baharoute-insights__city {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-insights__close {
+  flex: none;
+}
+.baharoute-insights__tabs {
+  display: flex;
+  flex: none;
+  gap: 4px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--baharoute-border, #e2e2e2);
+}
+.baharoute-insights__tab {
+  flex: 1;
+  min-height: var(--baharoute-touch-target);
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--baharoute-text-muted);
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.baharoute-insights__tab--active {
+  color: var(--baharoute-text);
+  border-bottom-color: #1a56db;
+}
+.baharoute-insights__body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 12px 16px calc(16px + var(--baharoute-safe-bottom));
+}
+/* The tab panel is the SINGLE scroll region; header + tabs stay pinned. */
+.baharoute-insights [role='tabpanel'] {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.baharoute-insights__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-insights__status-card {
+  border: 1px solid var(--baharoute-border, #e2e2e2);
+  border-left-width: 4px;
+  border-radius: 12px;
+  padding: 12px;
+}
+.baharoute-insights__risk {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+}
+.baharoute-insights__mark {
+  font-size: 18px;
+  line-height: 1;
+}
+.baharoute-insights__status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 8px 0 0;
+  font-size: 12px;
+}
+.baharoute-insights__status--live {
+  color: #1e7f4f;
+}
+.baharoute-insights__status--warn {
+  color: #a15c00;
+}
+.baharoute-insights__closure {
+  border: 1px solid #7a0016;
+  background: #fbeaec;
+  border-radius: 12px;
+  padding: 12px;
+}
+.baharoute-insights__closure-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+  font-weight: 700;
+  color: #7a0016;
+}
+.baharoute-insights__closure-src {
+  margin: 0;
+  font-size: 13px;
+}
+.baharoute-insights__metrics {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 12px;
+  margin: 0;
+}
+.baharoute-insights__metrics > div {
+  display: flex;
+  flex-direction: column;
+}
+.baharoute-insights__metrics dt {
+  font-size: 12px;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-insights__metrics dd {
+  margin: 2px 0 0;
+  font-size: 16px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+.baharoute-insights__section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 4px;
+  font-size: 13px;
+  font-weight: 700;
+}
+.baharoute-insights__why ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 13px;
+}
+.baharoute-insights__reports-count {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+.baharoute-insights__reports-tag {
+  margin: 2px 0 0;
+  font-size: 12px;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-insights__crossref {
+  border: 1px dashed var(--baharoute-border, #cbd2d9);
+  border-radius: 12px;
+  padding: 10px 12px;
+}
+.baharoute-insights__crossref-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  padding: 2px 0;
+}
+.baharoute-insights__crossref-note {
+  margin: 6px 0 0;
+  font-size: 12px;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-insights__fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 13px;
+}
+.baharoute-insights__fields dt {
+  color: var(--baharoute-text-muted);
+}
+.baharoute-insights__fields dd {
+  margin: 0;
+  /* Long source strings must wrap, not push the panel wider (mobile). */
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.baharoute-insights__more {
+  align-self: flex-start;
+  min-height: var(--baharoute-touch-target);
+  padding: 4px 10px;
+  border: 1px solid var(--baharoute-border, #cbd2d9);
+  border-radius: 8px;
+  background: var(--baharoute-surface);
+  color: var(--baharoute-text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.baharoute-insights__scenario {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.baharoute-insights__scenario-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-insights__segmented {
+  display: inline-flex;
+  gap: 4px;
+}
+.baharoute-insights__segmented button {
+  min-height: 32px;
+  padding: 4px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--baharoute-border, #cbd2d9);
+  background: var(--baharoute-surface);
+  color: var(--baharoute-text);
+  font-size: 13px;
+  cursor: pointer;
+}
+.baharoute-insights__segmented button[aria-pressed='true'] {
+  background: #3f2b96;
+  border-color: #3f2b96;
+  color: #fff;
+}
+.baharoute-insights__segmented button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.baharoute-insights__about {
+  font-size: 13px;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-insights__about p {
+  margin: 2px 0 0;
+}
+.baharoute-insights__empty {
+  margin: 0;
+  font-size: 13px;
+  color: var(--baharoute-text-muted);
+}
+
+/* Info tooltip */
+.baharoute-info {
+  position: relative;
+  display: inline-flex;
+}
+.baharoute-info__trigger {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--baharoute-border, #cbd2d9);
+  background: var(--baharoute-surface);
+  color: var(--baharoute-text-muted);
+  font-size: 10px;
+  font-style: italic;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+.baharoute-info__bubble {
+  position: absolute;
+  top: 20px;
+  left: 0;
+  z-index: 20;
+  width: 220px;
+  padding: 8px 10px;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--baharoute-text);
+  background: var(--baharoute-surface);
+  border: 1px solid var(--baharoute-border, #cbd2d9);
+  border-radius: 8px;
+  box-shadow: var(--baharoute-shadow, 0 4px 16px rgba(0, 0, 0, 0.18));
+}
+
+/* Distribution bar */
+.baharoute-distbar {
+  display: flex;
+  width: 100%;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: #eef0f2;
+}
+.baharoute-distbar__seg {
+  height: 100%;
+}
+
+/* Historical explore panel */
+.baharoute-explore-host {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  /* MAP-FIRST mobile sheet: keep ~58% of the viewport as map by default. The
+   * desktop override below replaces this with a top-left rail height. */
+  max-height: 42dvh;
+  overflow: auto;
+  padding: 16px 16px calc(16px + var(--baharoute-safe-bottom));
+  background: var(--baharoute-surface);
+  border-radius: 16px 16px 0 0;
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
+  box-sizing: border-box;
+}
+.baharoute-explore {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  color: var(--baharoute-text);
+}
+.baharoute-explore__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+}
+.baharoute-explore__controls {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  align-items: center;
+  gap: 8px 10px;
+}
+.baharoute-explore__controls label {
+  font-size: 13px;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-explore__controls select {
+  min-height: var(--baharoute-touch-target);
+  padding: 6px 8px;
+  border-radius: 8px;
+  border: 1px solid var(--baharoute-border, #cbd2d9);
+  background: var(--baharoute-surface);
+  color: var(--baharoute-text);
+  font-size: 14px;
+}
+.baharoute-explore__count {
+  margin: 0;
+  font-size: 13px;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-explore__summary {
+  border-top: 1px solid var(--baharoute-border, #e2e2e2);
+  padding-top: 8px;
+}
+.baharoute-explore__summary-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+.baharoute-explore__summary-sub {
+  margin: 2px 0 8px;
+  font-size: 13px;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-explore__counts {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  margin: 8px 0 0;
+}
+.baharoute-explore__counts > div {
+  display: flex;
+  flex-direction: column;
+}
+.baharoute-explore__counts dt {
+  font-size: 11px;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-explore__counts dd {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+.baharoute-explore__viewbrgy {
+  align-self: flex-start;
+  margin-top: 8px;
+  min-height: var(--baharoute-touch-target);
+  padding: 6px 12px;
+  border: 1px solid #3f2b96;
+  border-radius: 8px;
+  background: var(--baharoute-surface);
+  color: #3f2b96;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.baharoute-explore__provenance {
+  margin: 4px 0 0;
+  font-size: 11px;
+  color: var(--baharoute-text-muted);
+}
+
+/* Desktop: Flood Insights + Explore become left-side cards (not full-width
+   sheets), keeping the map dominant and the right-side layers panel clear. */
+@media (min-width: 768px) {
+  .baharoute-insights-host {
+    left: calc(var(--baharoute-control-inset) + var(--baharoute-safe-left));
+    right: auto;
+    bottom: auto;
+    /* Clear the brand chip + coverage badge at the top-left (like trip-host). */
+    top: var(--baharoute-panel-top);
+    width: 360px;
+  }
+  .baharoute-insights {
+    border-radius: 14px;
+    box-shadow: var(--baharoute-shadow, 0 4px 16px rgba(0, 0, 0, 0.18));
+    max-height: calc(100vh - var(--baharoute-panel-top) - var(--baharoute-panel-bottom-gap));
+    max-height: calc(100dvh - var(--baharoute-panel-top) - var(--baharoute-panel-bottom-gap));
+  }
+  /* The drag handle is a mobile affordance; hide the grip on desktop. */
+  .baharoute-insights__grip {
+    display: none;
+  }
+  /* Desktop ignores the mobile sheet heights — all collapse to the shared
+   * viewport-aware max-height so the panel never runs off-screen. */
+  .baharoute-insights[data-sheet='collapsed'],
+  .baharoute-insights[data-sheet='half'],
+  .baharoute-insights[data-sheet='full'] {
+    max-height: calc(100vh - var(--baharoute-panel-top) - var(--baharoute-panel-bottom-gap));
+    max-height: calc(100dvh - var(--baharoute-panel-top) - var(--baharoute-panel-bottom-gap));
+  }
+  .baharoute-explore-host {
+    left: calc(var(--baharoute-control-inset) + var(--baharoute-safe-left));
+    right: auto;
+    bottom: auto;
+    /* Clear the brand chip + coverage badge at the top-left (like trip-host). */
+    top: var(--baharoute-panel-top);
+    width: 340px;
+    max-height: calc(100vh - var(--baharoute-panel-top) - var(--baharoute-panel-bottom-gap));
+    max-height: calc(100dvh - var(--baharoute-panel-top) - var(--baharoute-panel-bottom-gap));
+    border-radius: 14px;
+    box-shadow: var(--baharoute-shadow, 0 4px 16px rgba(0, 0, 0, 0.18));
+  }
+}
+
+/* Desktop tier (>= 1024px): a touch more width for the left primary panel now
+ * that only ONE renders at a time, and keep the right-side Map Layers clear of
+ * the controls. Tablet (768-1023px) keeps the narrower 340/360 widths above. */
+@media (min-width: 1024px) {
+  .baharoute-trip-host,
+  .baharoute-explore-host {
+    width: 360px;
+  }
+  .baharoute-insights-host {
+    width: 380px;
+  }
+}
+
+/* Historical hover tooltip (barangay name / city / class). Follows the cursor;
+   non-interactive so it never blocks map interaction. */
+.baharoute-hist-tooltip {
+  position: absolute;
+  z-index: 8;
+  transform: translate(12px, 12px);
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-width: 220px;
+  padding: 6px 9px;
+  background: var(--baharoute-surface, #fff);
+  border: 1px solid var(--baharoute-border, #cbd2d9);
+  border-radius: 8px;
+  box-shadow: var(--baharoute-shadow, 0 2px 8px rgba(0, 0, 0, 0.15));
+  font-size: 12px;
+  line-height: 1.3;
+}
+.baharoute-hist-tooltip__name {
+  font-weight: 700;
+  color: var(--baharoute-text);
+}
+.baharoute-hist-tooltip__city {
+  color: var(--baharoute-text-muted);
+}
+.baharoute-hist-tooltip__class {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+/* ==========================================================================
+ * Route comparison: travel-mode + preference controls, status, closure note
+ * ========================================================================== */
+.baharoute-route-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 10px;
+}
+.baharoute-route-controls__label {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-route-controls .baharoute-segmented {
+  flex-wrap: wrap;
+}
+.baharoute-route-controls__note {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-route-status {
+  margin: 8px 0;
+  font-size: 13px;
+  color: var(--baharoute-text-muted);
+}
+.baharoute-route-status--warn {
+  color: #7a0016;
+  font-weight: 600;
+}
+.baharoute-route-card__closure {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #7a0016;
+  background: #fbeaec;
+  border-radius: 8px;
+}
+
+/* Route segment risk explanation (reads back the existing summary). */
+.baharoute-route-card__segments {
+  margin: 8px 0 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--baharoute-text-muted, #555);
+}
+
+/* Optional external navigation handoff (secondary to Driver Mode Start). */
+.baharoute-nav-handoff {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.baharoute-nav-handoff__label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--baharoute-text-muted, #555);
+}
+.baharoute-nav-handoff__links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.baharoute-nav-handoff__link {
+  flex: none;
+  min-height: 36px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 12px;
+  border: 1px solid var(--baharoute-border);
+  border-radius: 999px;
+  background: #fff;
+  color: var(--baharoute-focus-ring-color);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+}
+.baharoute-nav-handoff__link:hover {
+  background: #f1f3f5;
+}
+.baharoute-nav-handoff__note {
+  margin: 0;
+  font-size: 11px;
+  color: var(--baharoute-text-muted, #555);
+}
+
+/* ==========================================================================
+ * Historical Explore: breadcrumb drill-down + barangay/risk mismatch note
+ * ========================================================================== */
+.baharoute-breadcrumb {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin: 2px 0 8px;
+  font-size: 13px;
+}
+.baharoute-breadcrumb__crumb {
+  border: 0;
+  background: transparent;
+  padding: 2px 4px;
+  border-radius: 6px;
+  color: #3f2b96;
+  font-weight: 600;
+  cursor: pointer;
+}
+.baharoute-breadcrumb__crumb:disabled,
+.baharoute-breadcrumb__crumb--current {
+  color: var(--baharoute-text);
+  cursor: default;
+  font-weight: 700;
+}
+.baharoute-breadcrumb__sep {
+  color: var(--baharoute-text-muted);
+}
+.baharoute-explore__mismatch {
+  margin: 6px 0;
+  padding: 8px 10px;
+  border: 1px solid var(--baharoute-border, #cbd2d9);
+  border-radius: 8px;
+  background: #f6f4ff;
+  font-size: 13px;
+}
+.baharoute-explore__mismatch p {
+  margin: 0 0 2px;
+}
+.baharoute-explore__mismatch-sub {
+  color: var(--baharoute-text-muted);
+}
+.baharoute-explore__clear {
+  margin-top: 6px;
+  min-height: 34px;
+  padding: 4px 10px;
+  border: 1px solid #3f2b96;
+  border-radius: 8px;
+  background: var(--baharoute-surface);
+  color: #3f2b96;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+/* --- Unified flood-evidence summary -------------------------------------- */
+/* An inline demo badge variant (the default .baharoute-demo-badge is absolutely
+   positioned under the brand pill; inside cards we need it to flow with text). */
+.baharoute-demo-badge--inline,
+.baharoute-evidence__label .baharoute-demo-badge {
+  position: static;
+  top: auto;
+  left: auto;
+  display: inline-block;
+  margin-left: 6px;
+  vertical-align: middle;
+}
+
+.baharoute-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px;
+  background: var(--baharoute-surface, #fff);
+  border-radius: var(--baharoute-radius, 12px);
+}
+.baharoute-evidence__title {
+  margin: 0 0 2px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--baharoute-label, #6f6a62);
+}
+.baharoute-evidence__item {
+  padding: 8px 10px;
+  border: 1px solid var(--baharoute-border, #e2ded7);
+  border-radius: 10px;
+  border-left-width: 4px;
+}
+.baharoute-evidence__item[data-origin='LIVE_RAINFALL'] { border-left-color: #2f80ed; }
+.baharoute-evidence__item[data-origin='COMMUNITY_REPORT'] { border-left-color: #ef6c00; }
+.baharoute-evidence__item[data-origin='AI_WEB_EVIDENCE'] { border-left-color: #0d9488; }
+.baharoute-evidence__item[data-origin='HISTORICAL'] { border-left-color: #5c6bc0; }
+.baharoute-evidence__item--demo { border-left-color: #f0b429; background: #fffdf5; }
+.baharoute-evidence__label {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--baharoute-label, #6f6a62);
+}
+.baharoute-evidence__value {
+  margin: 2px 0 0;
+  font-size: 15px;
+  font-weight: 700;
+}
+.baharoute-evidence__qualifier {
+  margin: 2px 0 0;
+  font-size: 11px;
+  color: #8a8580;
+}
+.baharoute-evidence__demo {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+/* --- Layer control provenance sublabels ---------------------------------- */
+.baharoute-layer-text {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.2;
+}
+.baharoute-layer-provenance {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: #8a8580;
+}
+
+/* --- Demo-mode indicator (replaces the ambiguous global demo badge) ------ */
+/* Shown only when Demo Mode is active. Sits where the old demo badge sat, with
+   a clarifying note so live data is never implied synthetic. */
+.baharoute-demo-mode-indicator {
+  position: absolute;
+  top: calc(var(--baharoute-control-inset) + var(--baharoute-safe-top) + 46px);
+  left: calc(var(--baharoute-control-inset) + var(--baharoute-safe-left));
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+}
+/* The badge inside the indicator flows inline (not absolutely positioned). */
+.baharoute-demo-badge--mode {
+  position: static;
+  top: auto;
+  left: auto;
+}
+.baharoute-demo-mode-indicator__note {
+  font-size: 10px;
+  font-weight: 600;
+  color: #7a4b00;
+  background: #fff4d6cc;
+  border: 1px solid #f0d58a;
+  border-radius: 999px;
+  padding: 1px 8px;
+}
+
+/* --- AI evidence marker popup -------------------------------------------- */
+.baharoute-evidence-popup__location {
+  margin: 6px 0 0;
+  font-size: 14px;
+  font-weight: 700;
+}
+.baharoute-evidence-popup__event {
+  margin: 2px 0 0;
+  font-size: 13px;
+  color: #0d9488;
+  font-weight: 600;
+}
+.baharoute-evidence-popup__summary {
+  margin: 8px 0 0;
+  font-size: 12px;
+  color: #4a4640;
+}
+.baharoute-evidence-popup__link {
+  display: inline-block;
+  margin-top: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #0d9488;
+}
