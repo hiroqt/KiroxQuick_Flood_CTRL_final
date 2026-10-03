@@ -75,7 +75,7 @@ const listStyle: CSSProperties = {
 
 const itemLabelStyle: CSSProperties = {
   display: 'flex',
-  alignItems: 'flex-start',
+  alignItems: 'center',
   gap: '0.5rem',
   cursor: 'pointer',
 };
@@ -129,17 +129,7 @@ function LayerToggle({
             onToggle(meta.id, next);
           }}
         />
-        <span className="baharoute-layer-text">
-          <span className="baharoute-layer-label">{meta.label}</span>
-          {meta.provenance && (
-            <span
-              className="baharoute-layer-provenance"
-              data-testid={`layer-provenance-${meta.id}`}
-            >
-              {meta.provenance}
-            </span>
-          )}
-        </span>
+        <span className="baharoute-layer-label">{meta.label}</span>
         {status && (
           <span
             className="baharoute-layer-status"

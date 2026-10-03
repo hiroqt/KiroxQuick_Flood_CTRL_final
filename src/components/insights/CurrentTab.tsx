@@ -23,22 +23,10 @@ import { InfoTooltip } from './InfoTooltip';
 import { currentRiskMark, historicalMark, TOOLTIP_TEXT } from './statusMarks';
 import { Disclaimer } from '../overlays/Disclaimer';
 
-/** A compact AI web-evidence summary for the selected barangay. */
-export interface CurrentTabWebEvidence {
-  readonly count: number;
-  readonly strongestConfidence: 'UNVERIFIED' | 'CORROBORATED' | 'OFFICIAL' | null;
-  readonly agentUnavailable: boolean;
-}
-
 export interface CurrentTabProps {
   info: BarangayInfoPanelProps;
   /** Historical class for the same barangay (for the cross-reference), or null. */
   historicalClass: HistoricalRiskClass | null;
-  /**
-   * Optional AI web-evidence summary (unofficial, kept distinct from current
-   * risk). Presentation-only — it never changes the risk class.
-   */
-  webEvidence?: CurrentTabWebEvidence | null;
   className?: string;
 }
 
@@ -66,7 +54,7 @@ function StatusLine({ info }: { info: BarangayInfoPanelProps }) {
   );
 }
 
-export function CurrentTab({ info, historicalClass, webEvidence, className }: CurrentTabProps) {
+export function CurrentTab({ info, historicalClass, className }: CurrentTabProps) {
   const dataQuality = isDataQualityState(info.currentRisk);
   const isClosure = info.currentRisk === 'CONFIRMED_NOT_PASSABLE';
   const estimated = info.timelineStep !== 'now';
@@ -172,35 +160,6 @@ export function CurrentTab({ info, historicalClass, webEvidence, className }: Cu
             {info.recentReportCount} recent report{info.recentReportCount === 1 ? '' : 's'}
           </p>
           <p className="baharoute-insights__reports-tag">Community reported · unverified</p>
-        </div>
-      )}
-
-      {/* AI web evidence (unofficial, kept distinct from current risk and from
-          community reports). Only shown when there is something to say. */}
-      {webEvidence && (webEvidence.count > 0 || webEvidence.agentUnavailable) && (
-        <div className="baharoute-insights__reports" data-testid="current-web-evidence">
-          <p className="baharoute-insights__section-title">
-            Recent web evidence
-            <InfoTooltip label="About web evidence">
-              AI-discovered recent web/news mentions near this barangay. Unofficial
-              — it never confirms a closure and never sets the risk level.
-            </InfoTooltip>
-          </p>
-          {webEvidence.agentUnavailable ? (
-            <p className="baharoute-insights__reports-count">Evidence agent unavailable</p>
-          ) : (
-            <>
-              <p className="baharoute-insights__reports-count">
-                {webEvidence.count} recent article{webEvidence.count === 1 ? '' : 's'}
-              </p>
-              <p className="baharoute-insights__reports-tag">
-                AI-discovered · unofficial
-                {webEvidence.strongestConfidence
-                  ? ` · ${webEvidence.strongestConfidence.toLowerCase()}`
-                  : ''}
-              </p>
-            </>
-          )}
         </div>
       )}
 

@@ -296,12 +296,6 @@ export function RouteComparePanel({
                     <dd>{risk.reportCount}</dd>
                   </div>
                   <div className="baharoute-route-card__fact">
-                    <dt>Recent web evidence</dt>
-                    <dd data-testid={`route-webevidence-${candidate.id}`}>
-                      {risk.webEvidenceCount}
-                    </dd>
-                  </div>
-                  <div className="baharoute-route-card__fact">
                     <dt>Confirmed closures</dt>
                     <dd>{risk.closureCount}</dd>
                   </div>

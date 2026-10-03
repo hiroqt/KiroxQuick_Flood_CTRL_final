@@ -8,7 +8,6 @@ export type LayerId =
   | 'floodSusceptibility'
   | 'floodReports'
   | 'communityReports'
-  | 'aiFloodEvidence'
   | 'officialClosures'
   | 'routes'
   | 'routeFloodSegments'
@@ -19,13 +18,6 @@ export interface DataLayerMeta {
   label: string; // human text for Layer_Control (Req 9.5)
   /** Optional longer, more descriptive accessible name for assistive tech. */
   ariaLabel?: string;
-  /**
-   * Optional concise PROVENANCE qualifier shown beneath the label in the layer
-   * control, so a user can tell each layer's source at a glance (e.g.
-   * "Live · near-real-time", "User reported · unverified", "Official only").
-   * Presentation-only; it never changes data semantics.
-   */
-  provenance?: string;
   isDemo: boolean; // drives the demo/fixture badge (Req 15.2)
   defaultVisible: boolean;
 }
