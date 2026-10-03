@@ -509,6 +509,31 @@ describe('MapView — route preview (auto lines + selection + Start)', () => {
     await user.click(screen.getByText(/Mall of Asia/));
   }
 
+  it('Back stays on location selection with saved endpoints until Choose routes is pressed', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup();
+    const { manager, showRoutePreview, clearRoutePreview } = makeFakeManager();
+    render(<MapView config={CONFIG} createMapManager={() => manager} />);
+    await pickPitxToMoa(user);
+    await screen.findByTestId('route-compare-panel');
+    await user.click(screen.getByRole('button', { name: 'Back to search' }));
+    expect(screen.getByTestId('route-search-panel')).toBeVisible();
+    expect(screen.queryByTestId('route-compare-panel')).toBeNull();
+    expect(screen.getByTestId('search-field-origin')).toHaveTextContent(/PITX/);
+    expect(screen.getByTestId('search-field-destination')).toHaveTextContent(/Mall of Asia/);
+    expect(clearRoutePreview).toHaveBeenCalled();
+    expect(showRoutePreview).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: 'Choose routes' }));
+    expect(await screen.findByTestId('route-compare-panel')).toBeVisible();
+    expect(showRoutePreview).toHaveBeenCalledTimes(2);
+    await user.click(screen.getByRole('button', { name: 'Back to search' }));
+    await user.click(screen.getByRole('button', { name: 'Clear destination' }));
+    await user.click(screen.getByLabelText('To'));
+    await user.type(screen.getByLabelText('To'), 'Mall of Asia');
+    await user.click(screen.getByText(/Mall of Asia/));
+    expect(await screen.findByTestId('route-compare-panel')).toBeVisible();
+    expect(showRoutePreview).toHaveBeenCalledTimes(3);
+  });
+
   it('draws the route preview on the map automatically and previews (not Driver Mode)', async () => {
     const { default: userEvent } = await import('@testing-library/user-event');
     const user = userEvent.setup();
@@ -522,7 +547,10 @@ describe('MapView — route preview (auto lines + selection + Start)', () => {
     expect(showRoutePreview).toHaveBeenCalledTimes(1);
     // Called with the candidate routes, a selected id, and the O/D endpoints.
     const [routes, selectedId, ends] = showRoutePreview.mock.calls[0];
-    expect(routes.length).toBeGreaterThan(0);
+    expect(routes).toHaveLength(3);
+    expect(selectedId).toBe('pitx-moa-lowrisk');
+    expect(screen.queryByTestId('default-route-unavailable')).not.toBeInTheDocument();
+    expect(screen.getByTestId('start-route-button')).toBeEnabled();
     expect(typeof selectedId).toBe('string');
     expect(ends).toHaveLength(2);
     // Still a preview — Driver Mode HUD is not shown.
@@ -538,8 +566,8 @@ describe('MapView — route preview (auto lines + selection + Start)', () => {
     await pickPitxToMoa(user);
     await screen.findByTestId('route-compare-panel');
 
-    // The PITX→MOA demo yields two routes; select the alternative.
-    await user.click(screen.getByTestId('route-card-pitx-moa-lowrisk'));
+    // Select the third suggestion and verify the map follows that choice.
+    await user.click(screen.getByTestId('route-card-pitx-moa-longer'));
     expect(updateRoutePreviewSelection).toHaveBeenCalled();
     const calls = updateRoutePreviewSelection.mock.calls;
     const lastCall = calls[calls.length - 1];

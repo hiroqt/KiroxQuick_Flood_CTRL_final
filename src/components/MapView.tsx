@@ -54,7 +54,7 @@ import { RotateControl } from './controls/RotateControl';
 import { DriveSimulator } from '../simulation/DriveSimulator';
 import { SIM_SPEED_MPS } from '../simulation/DriveSimulator';
 import { PITX_TO_MOA_MANEUVERS, PITX_TO_MOA_ROUTE } from '../data/fixtures/pitxToMoaRoute';
-import { PITX_TO_MOA_HAZARDS, type DriveHazard } from '../data/fixtures/driveHazards';
+import { type DriveHazard } from '../data/fixtures/driveHazards';
 import { PITX_TO_MOA_REROUTES, type FloodReroute } from '../data/fixtures/floodReroutes';
 import type { RouteManeuver } from '../data/fixtures/pitxToMoaRoute';
 import {
@@ -83,6 +83,8 @@ import { LocationConsentDialog } from './trip/LocationConsentDialog';
 import {
   planRoutes,
   compareRoutes,
+  getInitialRouteSelection,
+  isRouteStartBlocked,
   type RouteOption,
   type RoutePreference,
 } from '../services/routePlanning';
@@ -92,19 +94,20 @@ import { currentRiskLabel, formatRelativeTime } from '../layers/riskLabels';
 import { isDataQualityState } from '../types/risk';
 import { FLOOD_STATE_COLORS, HISTORICAL_RISK_COLORS } from '../map/basemap/colorTokens';
 import { DrivingHud } from './driving/DrivingHud';
-import type { DriveCameraMode, DriveMarker, DriveRadius, DriveUpdate } from '../map/MapManager';
+import type { DriveCameraMode, DriveMarker, DriveRadius, DriveUpdate, PreviewRoute } from '../map/MapManager';
 
 /** The original PITX â†’ MOA route, measured once (reroutes branch off it). */
 const BASE_ROUTE = measureRoute(PITX_TO_MOA_ROUTE);
 
-/** Demo hazard dots placed on the route (report colors, labeled in the HUD). */
-const DRIVE_HAZARD_MARKERS: ReadonlyArray<DriveMarker> = (() => {
-  const route = measureRoute(PITX_TO_MOA_ROUTE);
-  return PITX_TO_MOA_HAZARDS.map((h) => ({
-    position: pointAlong(route, h.atM),
-    color: FLOOD_STATE_COLORS[h.state].hex,
+/** Marker coordinates and alerts share the selected route's measured geometry. */
+function demoMarkersFor(candidate: RouteOption['candidate']): DriveMarker[] {
+  const measured = measureRoute(candidate.route);
+  return (candidate.demoFloods ?? []).map((hazard) => ({
+    position: pointAlong(measured, hazard.atM),
+    color: FLOOD_STATE_COLORS[hazard.state].hex,
+    label: `DEMO · ${hazard.passability === 'passable' ? 'Passable' : 'Not passable'}`,
   }));
-})();
+}
 import { LocationControl } from './controls/LocationControl';
 import { LayerControl } from './controls/LayerControl';
 import { LayersButton } from './controls/LayersButton';
@@ -382,13 +385,13 @@ export interface MapManagerLike {
   ) => void;
   /** Draws the pre-drive route preview (selected emphasized + alternatives faded). */
   showRoutePreview?: (
-    routes: ReadonlyArray<{ id: string; geometry: ReadonlyArray<[number, number]> }>,
+    routes: ReadonlyArray<PreviewRoute>,
     selectedId: string,
     ends: [[number, number], [number, number]],
   ) => void;
   /** Re-emphasizes the preview for a newly selected route id. */
   updateRoutePreviewSelection?: (
-    routes: ReadonlyArray<{ id: string; geometry: ReadonlyArray<[number, number]> }>,
+    routes: ReadonlyArray<PreviewRoute>,
     selectedId: string,
   ) => void;
   /** Binds a click on alternative route lines â†’ route id; returns teardown. */
@@ -1807,17 +1810,17 @@ export function MapView({
       setRouteOptions(options);
 
       // Preserve an explicit manual selection when it still exists; otherwise
-      // select the recommended (first, best-ranked) option.
+      // select the validated recommendation, or Route B when none qualifies.
       const preserved =
         preserveSelectedId != null &&
         options.some((o) => o.candidate.id === preserveSelectedId)
           ? preserveSelectedId
           : null;
-      const nextId = preserved ?? options[0]?.candidate.id ?? null;
+      const nextId = preserved ?? getInitialRouteSelection(options)?.candidate.id ?? null;
       setSelectedRouteId(nextId);
 
-      if (nextId) {
-        managerRef.current?.showRoutePreview?.(previewRoutesFor(options), nextId, [
+      if (options.length > 0) {
+        managerRef.current?.showRoutePreview?.(previewRoutesFor(options), nextId ?? '', [
           [origin.coord[0], origin.coord[1]],
           [destination.coord[0], destination.coord[1]],
         ]);
@@ -1866,20 +1869,19 @@ export function MapView({
       selectedRouteId != null &&
       reranked.some((o) => o.candidate.id === selectedRouteId)
         ? selectedRouteId
-        : (reranked[0]?.candidate.id ?? null);
+        : (getInitialRouteSelection(reranked)?.candidate.id ?? null);
     setSelectedRouteId(keep);
-    if (keep) {
-      managerRef.current?.updateRoutePreviewSelection?.(previewRoutesFor(reranked), keep);
-    }
+    managerRef.current?.updateRoutePreviewSelection?.(previewRoutesFor(reranked), keep ?? '');
   };
 
   /** Maps compared options to the MapManager preview-route shape (id + geometry). */
   const previewRoutesFor = (
     options: readonly RouteOption[],
-  ): Array<{ id: string; geometry: ReadonlyArray<[number, number]> }> =>
+  ): PreviewRoute[] =>
     options.map((o) => ({
       id: o.candidate.id,
       geometry: o.candidate.route as ReadonlyArray<[number, number]>,
+      markers: demoMarkersFor(o.candidate),
     }));
 
   /**
@@ -2327,6 +2329,20 @@ export function MapView({
    * don't re-query the environment, then starts the simulator on the route.
    */
   const handleStartRoute = (option: RouteOption): void => {
+    if (findingRoutes || option.candidate.id !== selectedRouteId) return;
+    // Recheck the live snapshot at Start so a changed flood signal cannot leave
+    // a different automatic choice or a newly closed route ready to navigate.
+    const refreshed = compareRoutes(routeOptions.map((o) => o.candidate), routePlanningContext(), routePreference);
+    const current = refreshed.find((o) => o.candidate.id === option.candidate.id);
+    if (!current || isRouteStartBlocked(current) ||
+      (!manualRouteSelectionRef.current && getInitialRouteSelection(refreshed)?.candidate.id !== current.candidate.id)) {
+      setRouteOptions(refreshed);
+      setSelectedRouteId(null);
+      managerRef.current?.updateRoutePreviewSelection?.(previewRoutesFor(refreshed), '');
+      setTripNotice('Route conditions changed. Review the suggestions and select a route again.');
+      return;
+    }
+    option = current;
     const manager = managerRef.current;
     const candidate = option.candidate;
     // Preserve the reroute demo ONLY for the flagship PITXâ†’MOA primary route.
@@ -2351,7 +2367,7 @@ export function MapView({
     setDriveRadiusState(250);
     manager.setDriveCamera?.('driver');
     manager.setDriveRadius?.(250);
-    const markers = isDemoRoute ? DRIVE_HAZARD_MARKERS : [];
+    const markers = demoMarkersFor(candidate);
     manager.startDriveView(candidate.route, markers);
     runSimulator(manager, candidate.route, candidate.maneuvers);
   };
@@ -2414,7 +2430,7 @@ export function MapView({
    * the route is never lost â€” tapping it swaps Compare back in.
    */
   const selectedRouteOption =
-    routeOptions.find((o) => o.candidate.id === selectedRouteId) ?? routeOptions[0] ?? null;
+    routeOptions.find((o) => o.candidate.id === selectedRouteId) ?? null;
   const showRouteReadyChip =
     !driving &&
     phase !== 'error' &&
@@ -3091,6 +3107,7 @@ export function MapView({
             onPickOnMap={handlePickOnMap}
             pickTarget={pickTarget}
             onFindRoutes={handleFindRoutes}
+            autoFindOnMount={false}
             busy={findingRoutes}
             locationStatus={locationStatus}
           />

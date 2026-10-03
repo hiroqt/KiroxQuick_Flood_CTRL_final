@@ -2274,7 +2274,13 @@ body,
   text-align: left;
   cursor: pointer;
 }
+.baharoute-route-card__selected {
+  color: #1a56db;
+  font-size: 12px;
+  font-weight: 700;
+}
 .baharoute-route-card--selected {
+  background: #eff6ff;
   border-color: var(--baharoute-focus-ring-color);
   box-shadow: inset 0 0 0 2px var(--baharoute-focus-ring-color);
 }

@@ -164,6 +164,9 @@ export async function fetchDirectionsRoutes(
     alternatives?: boolean;
     fetchImpl?: FetchLike;
     signal?: AbortSignal;
+    /** Optional road-snapped shaping point for a distinct alternative. */
+    via?: LngLat;
+    excludePoints?: readonly LngLat[];
   } = {},
 ): Promise<DirectionsRoute[]> {
   if (!token) return [];
@@ -173,7 +176,8 @@ export async function fetchDirectionsRoutes(
 
   const mode = opts.mode ?? 'drive';
   const profile = TRAVEL_MODE_PROFILE[mode] ?? 'driving';
-  const coords = `${origin[0]},${origin[1]};${destination[0]},${destination[1]}`;
+  const points = opts.via ? [origin, opts.via, destination] : [origin, destination];
+  const coords = points.map((p) => `${p[0]},${p[1]}`).join(';');
   const query = new URLSearchParams({
     geometries: 'geojson',
     overview: 'full',
@@ -181,6 +185,11 @@ export async function fetchDirectionsRoutes(
     access_token: token,
   });
   if (opts.alternatives) query.set('alternatives', 'true');
+  if (mode === 'drive' && opts.excludePoints?.length) {
+    query.set('exclude', opts.excludePoints.slice(0, 50).map(([lng, lat]) => `point(${lng} ${lat})`).join(','));
+  }
+  // The shaping point influences the path without becoming an arrival stop.
+  if (opts.via) query.set('waypoints', '0;2');
   const url = `${DIRECTIONS_API}/${profile}/${coords}?${query.toString()}`;
 
   try {
