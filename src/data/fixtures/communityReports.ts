@@ -1,6 +1,6 @@
 ﻿// src/data/fixtures/communityReports.ts
 //
-// DEMO / FIXTURE DATA -- NOT AUTHORITATIVE, NOT REAL OBSERVATIONS
+// DEMO / FIXTURE DATA — NOT AUTHORITATIVE, NOT REAL OBSERVATIONS
 // Synthetic community (non-authoritative) flood reports for development/demo
 // only. These are INVENTED demo points, not real community submissions, and are
 // always marked UNCONFIRMED (Req 14.3, 14.4, 15.1, 15.2, 15.4). Location text is
@@ -15,7 +15,7 @@ import type { CommunityReport } from '../../types/report';
 import { buildCommunityReport, resolveReport } from '../../services/reportLifecycle';
 
 /** Demo source marker attached to every community-report fixture (Req 15.4). */
-export const COMMUNITY_REPORTS_DEMO_SOURCE = 'DEMO â€” synthetic community report (not real)';
+export const COMMUNITY_REPORTS_DEMO_SOURCE = 'DEMO — synthetic community report (not real)';
 
 /** Marks this module's contents as demo/fixture data (Req 15.2). */
 export const COMMUNITY_REPORTS_IS_DEMO = true;

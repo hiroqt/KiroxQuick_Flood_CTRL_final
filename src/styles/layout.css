@@ -161,6 +161,11 @@ body,
 }
 
 .baharoute-control-items {
+  max-height: calc(100dvh - 2 * var(--baharoute-control-inset) - var(--baharoute-safe-top) - var(--baharoute-safe-bottom) - var(--baharoute-touch-target) - var(--baharoute-control-gap) - 8px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  padding: 2px;
   display: none;
   flex-direction: column;
   align-items: flex-end;
@@ -172,7 +177,8 @@ body,
 }
 
 .baharoute-controls[data-mobile-open='true'] .baharoute-control-items > * {
-  animation: baharoute-mobile-control-enter 220ms ease-in-out both;
+  flex-shrink: 0;
+  animation: baharoute-mobile-control-enter 220ms ease-in-out backwards;
 }
 
 .baharoute-controls[data-mobile-open='true'] .baharoute-control-items > *:nth-child(2) {
@@ -233,11 +239,9 @@ body,
 @keyframes baharoute-mobile-control-enter {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.94);
   }
   to {
     opacity: 1;
-    transform: translateY(0) scale(1);
   }
 }
 
@@ -277,7 +281,7 @@ body,
   }
 
   .baharoute-controls[data-mobile-open='true'] .baharoute-control-items > * {
-    animation: baharoute-mobile-control-enter 220ms ease-in-out both;
+    animation: baharoute-mobile-control-enter 220ms ease-in-out backwards;
   }
 
   .baharoute-controls[data-mobile-open='true'] .baharoute-control-items > *:nth-child(2) {
@@ -565,14 +569,15 @@ body,
   position: relative;
 }
 .baharoute-layers__panel {
-  position: absolute;
-  right: calc(100% + 8px);
-  /* Enhancement fix: open downward from the button so the panel never
-     grows past the top of the viewport (controls sit top-right on desktop). */
-  top: 0;
+  position: fixed;
+  right: calc(var(--baharoute-control-inset) + var(--baharoute-safe-right) + var(--baharoute-touch-target) + 12px);
+  top: calc(var(--baharoute-control-inset) + var(--baharoute-safe-top));
   /* Phase 3: slightly more compact so the map stays dominant. */
-  width: 232px;
-  max-height: calc(100vh - 2 * var(--baharoute-control-inset));
+  width: min(280px, calc(100vw - 88px));
+  max-height: calc(100dvh - 2 * var(--baharoute-control-inset) - var(--baharoute-safe-top) - var(--baharoute-safe-bottom));
+  overscroll-behavior: contain;
+  touch-action: pan-y;
+  z-index: 12;
   overflow: auto;
   padding: 10px 12px;
   background: var(--baharoute-surface);
@@ -627,12 +632,12 @@ body,
 
 .baharoute-cam-panel {
   position: fixed;
-  left: auto;
-  top: calc(50% - 40px);
-  right: calc(60px + var(--baharoute-safe-right));
-  transform: translateY(-50%);
-  width: min(440px, calc(100vw - 32px));
-  max-height: calc(100vh - 2 * var(--baharoute-control-inset) - 40px);
+  right: calc(var(--baharoute-control-inset) + var(--baharoute-safe-right) + var(--baharoute-touch-target) + 12px);
+  top: calc(var(--baharoute-control-inset) + var(--baharoute-safe-top));
+  width: min(440px, calc(100vw - 88px));
+  max-height: calc(100dvh - 2 * var(--baharoute-control-inset) - var(--baharoute-safe-top) - var(--baharoute-safe-bottom));
+  overscroll-behavior: contain;
+  touch-action: pan-y;
   overflow-y: auto;
   padding: 14px 16px;
   background: #ffffff;
@@ -1143,11 +1148,48 @@ body,
   background: #0b5064;
   transform: scale(1.06);
 }
+/* Keep the close control outside the scrolling camera content. Mapbox chooses
+ * an available anchor on desktop; phones use a sheet within the map bounds. */
+.baharoute-camera-map-popup { z-index: 11; }
+.baharoute-map-view[data-control-panel] .baharoute-camera-map-popup { z-index: 1; }
+.baharoute-camera-map-popup .mapboxgl-popup-content {
+  width: min(360px, calc(100vw - 32px));
+  box-sizing: border-box;
+  padding: 44px 12px 12px;
+  border-radius: 14px;
+  box-shadow: var(--baharoute-shadow);
+}
+.baharoute-camera-map-popup .mapboxgl-popup-close-button {
+  width: 44px;
+  height: 44px;
+  font-size: 24px;
+  border-radius: 12px;
+}
+.baharoute-camera-map-popup .mapboxgl-popup-close-button:focus-visible {
+  outline: 2px solid var(--baharoute-focus-ring-color);
+  outline-offset: -4px;
+}
+@media (max-width: 767px), (max-height: 500px) {
+  .baharoute-camera-map-popup {
+    top: auto !important;
+    left: calc(12px + var(--baharoute-safe-left)) !important;
+    right: calc(12px + var(--baharoute-safe-right));
+    bottom: calc(12px + var(--baharoute-safe-bottom));
+    transform: none !important;
+    max-width: none !important;
+  }
+  .baharoute-camera-map-popup .mapboxgl-popup-tip { display: none; }
+  .baharoute-camera-map-popup .mapboxgl-popup-content { width: 100%; }
+  .baharoute-camera-map-popup .baharoute-camera-popup {
+    max-height: min(68dvh, calc(100dvh - 120px - var(--baharoute-safe-top) - var(--baharoute-safe-bottom)));
+  }
+}
 .baharoute-camera-popup {
-  display: flex;
-  flex-direction: column;
-  width: min(244px, calc(100vw - 64px));
-  max-height: min(72vh, 620px);
+  width: 100%;
+  min-width: 0;
+  max-height: min(560px, calc(50dvh - 100px));
+  touch-action: pan-y;
+  overflow-wrap: anywhere;
   overflow-y: auto;
   overscroll-behavior: contain;
   color: #1f2937;
@@ -1187,7 +1229,7 @@ body,
 }
 .baharoute-camera-popup__summary-fields {
   display: grid;
-  grid-template-columns: auto 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.4fr);
   gap: 4px 10px;
   margin: 0;
   font-size: 12px;
@@ -1210,14 +1252,15 @@ body,
 .baharoute-camera-popup__video {
   display: block;
   width: 100%;
-  max-width: 244px;
+  max-width: 100%;
+  max-height: min(32dvh, 240px);
   height: auto;
   aspect-ratio: 16 / 9;
-  object-fit: cover;
+  object-fit: contain;
   border: 0;
 }
 .baharoute-camera-popup__video {
-  height: 169px;
+  height: auto;
 }
 .baharoute-flood-popup__title {
   margin: 0 40px 8px 0;
@@ -1284,6 +1327,8 @@ body,
    * time). Height is map-first so the map stays visible behind it. */
   .baharoute-layers__panel {
     position: fixed;
+    top: auto;
+    max-height: 65dvh;
     left: 0;
     right: 0;
     bottom: 0;
@@ -1296,13 +1341,14 @@ body,
 
   .baharoute-cam-panel {
     position: fixed;
+    top: auto;
     left: 0;
     right: 0;
     top: auto;
     bottom: 0;
     transform: none;
     width: auto;
-    max-height: 80dvh;
+    max-height: 72dvh;
     padding-bottom: calc(14px + var(--baharoute-safe-bottom));
     border-radius: 18px 18px 0 0;
     box-shadow: 0 -4px 20px rgba(0, 0, 0, 0.25);
@@ -4277,6 +4323,17 @@ body,
 }
 .baharoute-explore__city-risk:hover { background: #f6f4f1; }
 .baharoute-explore__city-risk strong { margin-left: auto; }
+
+/* Compact camera metadata without squeezing names on narrow phones. */
+@media (max-width: 400px) {
+  .baharoute-cam-panel { padding-inline: 12px; }
+  .baharoute-cam-item { flex-wrap: wrap; row-gap: 8px; }
+  .baharoute-cam-item__thumb { width: 48px; height: 48px; min-width: 48px; margin-right: 8px; }
+  .baharoute-cam-item__right { flex-basis: 100%; }
+  .baharoute-cam-item__meta-texts { flex-direction: row; flex-wrap: wrap; gap: 4px 10px; }
+  .baharoute-cam-item__lines { display: none; }
+}
+
 
 .baharoute-hist-tooltip__action {
   margin-top: 6px;

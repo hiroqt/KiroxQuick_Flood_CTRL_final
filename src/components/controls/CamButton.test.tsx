@@ -1,6 +1,6 @@
 // src/components/controls/CamButton.test.tsx
 import { describe, expect, it, vi } from 'vitest';
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { CamButton } from './CamButton';
 import { formatCameraDateTime } from './camFormatting';
@@ -191,8 +191,8 @@ describe('CamButton', () => {
     // Thumbnail for cam-101 is now an img
     expect(screen.getByAltText('EDSA - Guadalupe preview')).toBeVisible();
 
-    // Cam 102 is STILL a placeholder and never fetched!
-    expect(screen.getByTestId('cam-thumb-placeholder-cam-102')).toBeVisible();
+    // Cam 102 keeps its list preview and never fetches full details.
+    expect(screen.getByAltText('C5 - Bagong Ilog preview')).toHaveAttribute('src', MOCK_CAMERAS[1].mediaUrl);
     expect(screen.queryByTestId('cam-detail-cam-102')).toBeNull();
   });
 
@@ -202,5 +202,52 @@ describe('CamButton', () => {
     const { date, time } = formatCameraDateTime(1728000000);
     expect(date).toBe('October 04, 2024');
     expect(time).toBe('08:00:00');
+  });
+});
+
+
+describe('camera request responsiveness', () => {
+  it('retries a failed camera list without reopening the panel', async () => {
+    const user = userEvent.setup();
+    const loadCameras = vi.fn().mockRejectedValueOnce(new Error('Temporary failure'))
+      .mockResolvedValueOnce(MOCK_CAMERAS);
+    render(<CamButton defaultOpen loadCameras={loadCameras} />);
+    await screen.findByText('Temporary failure');
+    await user.click(screen.getByRole('button', { name: 'Retry' }));
+    expect(await screen.findByText('EDSA - Guadalupe')).toBeVisible();
+    expect(loadCameras).toHaveBeenCalledTimes(2);
+  });
+
+  it('cancels collapsed details and ignores a late result before reopening', async () => {
+    const user = userEvent.setup();
+    let resolveDetails!: (details: { imageUrl: string }) => void;
+    const fetchCameraDetails = vi.fn().mockImplementationOnce(() => new Promise((resolve) => {
+      resolveDetails = resolve;
+    })).mockResolvedValueOnce({ imageUrl: 'https://images.example.test/fresh.jpg' });
+    render(<CamButton defaultOpen loadCameras={async () => MOCK_CAMERAS} fetchCameraDetails={fetchCameraDetails} />);
+    const item = await screen.findByTestId('cam-item-cam-101');
+    await user.click(item);
+    const signal = fetchCameraDetails.mock.calls[0][1] as AbortSignal;
+    await user.click(item);
+    expect(signal.aborted).toBe(true);
+    await act(async () => resolveDetails({ imageUrl: 'https://images.example.test/stale.jpg' }));
+    expect(screen.getByAltText('EDSA - Guadalupe preview')).toHaveAttribute('src', MOCK_CAMERAS[0].mediaUrl);
+    await user.click(item);
+    expect(await screen.findByAltText('EDSA - Guadalupe preview')).toHaveAttribute('src', 'https://images.example.test/fresh.jpg');
+  });
+
+  it('cancels details when the panel closes or unmounts', async () => {
+    const user = userEvent.setup();
+    const fetchCameraDetails = vi.fn((_camera: MetroManilaTrafficCamera, _signal?: AbortSignal) => new Promise<never>(() => {}));
+    const { unmount } = render(<CamButton defaultOpen loadCameras={async () => MOCK_CAMERAS} fetchCameraDetails={fetchCameraDetails} />);
+    await user.click(await screen.findByTestId('cam-item-cam-101'));
+    const firstSignal = fetchCameraDetails.mock.calls[0][1] as AbortSignal;
+    await user.click(screen.getByRole('button', { name: 'Close webcam list' }));
+    expect(firstSignal.aborted).toBe(true);
+    await user.click(screen.getByRole('button', { name: 'Metro Manila webcams' }));
+    await user.click(screen.getByTestId('cam-item-cam-101'));
+    const secondSignal = fetchCameraDetails.mock.calls[1][1] as AbortSignal;
+    unmount();
+    expect(secondSignal.aborted).toBe(true);
   });
 });

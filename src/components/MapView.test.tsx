@@ -789,7 +789,7 @@ describe('Community Report V2 — report-mode / lifecycle UX (Phase 1 fixes)', (
     const user = userEvent.setup();
     const { manager } = makeFakeManager();
     render(<MapView config={CONFIG} createMapManager={() => manager} />);
-    const reportBtn = screen.getByRole('button', { name: /report flooding/i });
+    const reportBtn = screen.getByTestId('map-mode-community');
     await user.click(reportBtn);
     return { user };
   }
@@ -812,7 +812,37 @@ describe('Community Report V2 — report-mode / lifecycle UX (Phase 1 fixes)', (
   it('toggling report mode off hides the banner again', async () => {
     const { user } = await enterReportMode();
     expect(screen.getByTestId('report-mode-banner')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /report flooding/i }));
+    await user.click(screen.getByTestId('map-mode-route'));
+    expect(screen.queryByTestId('report-mode-banner')).toBeNull();
+  });
+});
+
+describe('MapView — Route / Community / Historical navigation', () => {
+  it('switches between exclusive surfaces and returns to route planning', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    const { manager } = makeFakeManager();
+    render(<MapView config={CONFIG} createMapManager={() => manager} />);
+
+    expect(screen.getByTestId('map-mode-route')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('route-search-panel')).toBeVisible();
+
+    await user.click(screen.getByTestId('map-mode-community'));
+    expect(screen.getByTestId('map-mode-community')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('report-mode-banner')).toBeVisible();
+    expect(screen.queryByTestId('route-search-panel')).toBeNull();
+    expect(screen.queryByTestId('historical-evidence-panel')).toBeNull();
+
+    await user.click(screen.getByTestId('map-mode-historical'));
+    expect(screen.getByTestId('map-mode-historical')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('historical-evidence-panel')).toBeVisible();
+    expect(screen.queryByTestId('report-mode-banner')).toBeNull();
+    expect(screen.queryByTestId('route-search-panel')).toBeNull();
+
+    await user.click(screen.getByTestId('map-mode-route'));
+    expect(screen.getByTestId('map-mode-route')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('route-search-panel')).toBeVisible();
+    expect(screen.queryByTestId('historical-evidence-panel')).toBeNull();
     expect(screen.queryByTestId('report-mode-banner')).toBeNull();
   });
 });

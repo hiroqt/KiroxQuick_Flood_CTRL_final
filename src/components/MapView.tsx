@@ -971,8 +971,7 @@ export function MapView({
       } catch (error) {
         if (disposed || sequence !== requestSequence || (error instanceof DOMException && error.name === 'AbortError')) return;
         if (lastViewportKey === key) lastViewportKey = '';
-        cameraSnapshotRef.current = null;
-        markerManager.setCameras([]);
+        // Keep already-visible cameras available during a transient failure.
       } finally {
         if (requestController === controller) requestController = null;
       }
@@ -1578,6 +1577,7 @@ export function MapView({
   /** True while "report flooding" map-pick mode is active (next tap = report). */
   const [reportPickActive, setReportPickActive] = useState(false);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
+  const [controlPanel, setControlPanel] = useState<'layers' | 'cameras' | null>(null);
   const reportPickActiveRef = useRef(false);
   /**
    * HISTORICAL Flood Evidence panel open state (DEMO / RESEARCH USE ONLY). When
@@ -2140,6 +2140,7 @@ export function MapView({
       lifecycle: report.lifecycle ?? 'ACTIVE',
       confirmationCount: report.confirmationCount ?? 0,
       lastConfirmedAt: report.lastConfirmedAt ?? null,
+      resolvedAt: report.resolvedAt ?? null,
     };
   };
 
@@ -2175,6 +2176,7 @@ export function MapView({
       lifecycle: data.lifecycle,
       confirmationCount: data.confirmationCount,
       lastConfirmedAt: data.lastConfirmedAt ?? undefined,
+      resolvedAt: data.resolvedAt ?? undefined,
     };
     if (data.kind !== 'community' || !data.id) return base;
     const id = data.id;
@@ -2415,7 +2417,9 @@ export function MapView({
    * search panel. Secondary state is never destroyed â€” e.g. a ready route stays
    * in memory and is reachable via the compact "Route ready" chip.
    */
-  const primaryLeftPanel: PrimaryLeftPanel = resolvePrimaryLeftPanel({
+  // Report details temporarily own the rail/sheet; closing restores the trip
+  // or historical panel with its existing state.
+  const primaryLeftPanel: PrimaryLeftPanel = popup?.kind === 'report' ? null : resolvePrimaryLeftPanel({
     isError: phase === 'error',
     driving,
     barangaySelected: popup?.kind === 'barangay',
@@ -2858,7 +2862,7 @@ export function MapView({
   }, [floodRiskVisible, historicalVisible, insightsTab, popup, historicalFilter.view]);
 
   return (
-    <div className="baharoute-map-view" data-testid="map-view">
+    <div className="baharoute-map-view" data-testid="map-view" data-control-panel={controlPanel ?? undefined}>
       <div
         ref={containerRef}
         className="baharoute-map"
@@ -2929,7 +2933,10 @@ export function MapView({
           aria-label={mobileControlsOpen ? 'Close map controls' : 'Open map controls'}
           aria-expanded={mobileControlsOpen}
           aria-controls="map-control-items"
-          onClick={() => setMobileControlsOpen((open) => !open)}
+          onClick={() => {
+            setMobileControlsOpen((open) => !open);
+            setControlPanel(null);
+          }}
         >
           <span aria-hidden="true" className="baharoute-hamburger-icon">
             <span />
@@ -2945,27 +2952,9 @@ export function MapView({
           <div className="baharoute-control-card baharoute-control-card--single"><ViewModeControl is3D={is3D || driving} onToggle={handleViewModeToggle} /></div>
           <div className="baharoute-control-card baharoute-control-card--rotate"><RotateControl bearing={bearing} onRotate={handleRotateBy} onResetNorth={handleResetNorth} /></div>
           <div className="baharoute-control-card baharoute-control-card--single"><LocationControl onActivate={handleLocationArrow} /></div>
-          <div className="baharoute-control-card baharoute-control-card--single">
-            <button type="button" className="baharoute-report-flood baharoute-focus-ring" aria-pressed={reportPickActive} title="Report flooding (adds an unverified community report)" aria-label="Report flooding - adds an unverified community report at a point you tap" onClick={handleReportFloodingToggle}>
-              <span aria-hidden="true">!</span>
-            </button>
-          </div>
-          <div className="baharoute-control-card baharoute-control-card--single">
-            <button
-              type="button"
-              className="baharoute-historical-toggle baharoute-focus-ring"
-              aria-pressed={showHistoricalEvidence}
-              title="Historical Flood Evidence (demo / research use only — not current conditions)"
-              aria-label="Historical Flood Evidence — demo research records, not current conditions"
-              data-testid="historical-evidence-toggle"
-              onClick={() =>
-                handleMapModeChange(mapMode === 'historical' ? 'route' : 'historical')
-              }
-            >
-              <span aria-hidden="true">H</span>
-            </button>
-          </div>
           <CamButton
+            open={controlPanel === 'cameras'}
+            onOpenChange={(open) => setControlPanel(open ? 'cameras' : null)}
             loadCameras={async (signal) => {
               const snapshot = loadCameraSnapshot
                 ? await loadCameraSnapshot(signal)
@@ -2974,7 +2963,10 @@ export function MapView({
             }}
             onSelectCamera={handleSelectCameraFromList}
           />
-          <LayersButton>
+          <LayersButton
+            open={controlPanel === 'layers'}
+            onOpenChange={(open) => setControlPanel(open ? 'layers' : null)}
+          >
           <LayerControl
             layers={layers}
             groups={layerGroups}

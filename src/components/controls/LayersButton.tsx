@@ -16,10 +16,17 @@ export interface LayersButtonProps {
   children: ReactNode;
   /** Initial open state. Defaults to closed. */
   defaultOpen?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
-export function LayersButton({ children, defaultOpen = false }: LayersButtonProps) {
-  const [open, setOpen] = useState(defaultOpen);
+export function LayersButton({ children, defaultOpen = false, open: controlledOpen, onOpenChange }: LayersButtonProps) {
+  const [localOpen, setLocalOpen] = useState(defaultOpen);
+  const open = controlledOpen ?? localOpen;
+  const setOpen = (next: boolean): void => {
+    setLocalOpen(next);
+    onOpenChange?.(next);
+  };
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const panelId = useId();
 
@@ -46,7 +53,7 @@ export function LayersButton({ children, defaultOpen = false }: LayersButtonProp
         title="Map layers"
         aria-expanded={open}
         aria-controls={panelId}
-        onClick={() => setOpen((value) => !value)}
+        onClick={() => setOpen(!open)}
       >
         <LayersIcon />
       </button>

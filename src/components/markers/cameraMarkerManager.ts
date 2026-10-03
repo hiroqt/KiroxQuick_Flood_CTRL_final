@@ -127,7 +127,7 @@ export class CameraMarkerManager {
     const sourceId = typeof cameraOrId === 'string' ? cameraOrId : cameraOrId.sourceId;
     for (const [key, placed] of this.markers) {
       if (placed.camera.sourceId === sourceId) {
-        this.openPopup(key);
+        this.openPopup(key, true);
         return true;
       }
     }
@@ -150,7 +150,7 @@ export class CameraMarkerManager {
         }
       });
       this.markers.set(key, placed);
-      this.openPopup(key);
+      this.openPopup(key, true);
       return true;
     }
     return false;
@@ -162,10 +162,11 @@ export class CameraMarkerManager {
     this.markers.clear();
   }
 
-  private openPopup(key: string): void {
+  private openPopup(key: string, explicitSelection = false): void {
     const placed = this.markers.get(key);
     if (!placed) return;
-    if (this.canOpenPopup && !this.canOpenPopup(placed.camera)) {
+    // List selections open immediately while the map animates toward the city.
+    if (!explicitSelection && this.canOpenPopup && !this.canOpenPopup(placed.camera)) {
       return;
     }
     this.closePopup();
@@ -361,7 +362,8 @@ export function createCameraPopupContent(
     image.referrerPolicy = 'no-referrer';
     media.appendChild(image);
   }
-  root.appendChild(media);
+  // Show the camera view immediately; weather and attribution scroll below it.
+  root.insertBefore(media, summary);
 
   return root;
 }

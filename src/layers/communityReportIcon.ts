@@ -181,14 +181,17 @@ export function buildHitboxImage(size = 44): MarkerImage {
   return { width: size, height: size, data: new Uint8ClampedArray(size * size * 4) };
 }
 
-/** Every community marker image to register, keyed by its Mapbox image id. */
-export function buildAllCommunityImages(size = 28): Array<{ id: string; image: MarkerImage }> {
+/**
+ * Images are drawn at 2× resolution: the default pin displays at 32×42 CSS
+ * pixels, the badge at 20px, and the forgiving tap target at 48×48px.
+ */
+export function buildAllCommunityImages(size = 64): Array<{ id: string; image: MarkerImage }> {
   const out: Array<{ id: string; image: MarkerImage }> = [];
   for (const key of COMMUNITY_DEPTH_ICON_KEYS) {
     out.push({ id: communityIconId(key), image: buildPinImage(size, iconFill(key)) });
   }
-  out.push({ id: COMMUNITY_BADGE_ICON_ID, image: buildBadgeImage(Math.round(size * 0.72)) });
-  out.push({ id: COMMUNITY_HITBOX_ICON_ID, image: buildHitboxImage(Math.round(size * 1.6)) });
+  out.push({ id: COMMUNITY_BADGE_ICON_ID, image: buildBadgeImage(Math.round(size * 0.625)) });
+  out.push({ id: COMMUNITY_HITBOX_ICON_ID, image: buildHitboxImage(Math.round(size * 1.5)) });
   return out;
 }
 
@@ -203,7 +206,7 @@ export interface ImageRegistryMap {
  * a style reload that already restored an image never triggers a duplicate-image
  * exception. Idempotent and safe to call again after `styledata`/`style.load`.
  */
-export function registerCommunityImages(map: ImageRegistryMap, size = 28): void {
+export function registerCommunityImages(map: ImageRegistryMap, size = 64): void {
   for (const { id, image } of buildAllCommunityImages(size)) {
     if (map.hasImage(id)) continue;
     map.addImage(id, image, { pixelRatio: 2 });

@@ -93,6 +93,7 @@ export function communityReportsToGeoJSON(
           lifecycle: r.lifecycle ?? 'ACTIVE',
           confirmationCount: confirmations,
           lastConfirmedAt: r.lastConfirmedAt ?? 0,
+          resolvedAt: r.resolvedAt ?? 0,
           // --- Realism-pass display props (presentation only) ---
           /** Depth bucket driving marker COLOR (observable, not subjective). */
           depthColor: communityDepthColor(r.depth, resolved),
@@ -236,9 +237,9 @@ export function updateCommunityReportsSource(
 const STAGE_OPACITY: (readonly [string, number])[] = [
   ['FRESH', 1.0],
   ['RECENT', 0.85],
-  ['AGING', 0.6],
-  ['STALE', 0.4],
-  ['RESOLVED', 0.45],
+  ['AGING', 0.85],
+  ['STALE', 0.7],
+  ['RESOLVED', 0.75],
 ];
 
 /** Builds the Mapbox `match` expression for stage → opacity. */
@@ -305,12 +306,12 @@ export function buildCommunityReportsBadgeLayer(): MapLayerSpec {
       'icon-image': COMMUNITY_BADGE_ICON_ID,
       'icon-size': 1,
       'icon-anchor': 'center',
-      'icon-offset': [10, -34], // top-right of the pin
+      'icon-offset': [12, -34], // top-right of the pin
       'icon-allow-overlap': true,
       'icon-ignore-placement': true,
       'text-field': ['get', 'badgeText'],
       'text-size': 11,
-      'text-offset': [0.7, -2.4],
+      'text-offset': [12 / 11, -34 / 11],
       'text-allow-overlap': true,
       'text-ignore-placement': true,
     },
@@ -465,6 +466,7 @@ export interface ReportPopupData {
   lifecycle?: string;
   confirmationCount?: number;
   lastConfirmedAt?: number | null;
+  resolvedAt?: number | null;
 }
 
 interface MarkerClickEvent {
@@ -507,7 +509,8 @@ export function installReportPopups(
   render: RenderReportPopup,
 ): () => void {
   const onCommunity = (e: MarkerClickEvent): void => {
-    const p = e.features?.[0]?.properties ?? {};
+    const p = e.features?.[0]?.properties;
+    if (!p) return;
     render(
       {
         kind: 'community',
@@ -523,12 +526,14 @@ export function installReportPopups(
         lifecycle: str(p.lifecycle) || undefined,
         confirmationCount: num(p.confirmationCount) ?? 0,
         lastConfirmedAt: num(p.lastConfirmedAt),
+        resolvedAt: num(p.resolvedAt) || null,
       },
       e.lngLat,
     );
   };
   const onOfficial = (e: MarkerClickEvent): void => {
-    const p = e.features?.[0]?.properties ?? {};
+    const p = e.features?.[0]?.properties;
+    if (!p) return;
     render(
       {
         kind: 'official',

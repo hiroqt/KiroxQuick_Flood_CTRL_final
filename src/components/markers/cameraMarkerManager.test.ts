@@ -59,16 +59,17 @@ describe('camera markers and popup media', () => {
     expect(marker.getAttribute('aria-label')).toContain('Manila');
   });
 
-  it('opens an image preview linked to the Windy camera detail page with attribution', () => {
+  it('opens the camera image with the current summary fields', () => {
     const popup = createCameraPopupContent(camera());
     expect(popup.querySelector('[data-summary="location"]')?.textContent).toBe('Manila');
     const image = popup.querySelector('img');
     expect(image?.src).toBe('https://images.example.test/frame.jpg');
     expect(image?.alt).toContain('Test camera');
-    expect(image?.closest('a')?.href).toBe('https://www.windy.com/webcams/1');
-    expect(popup.textContent).toContain('Webcams provided by');
-    expect(popup.textContent).toContain('add a webcam');
-    expect(popup.textContent).toContain('Source update:');
+    expect(popup.querySelector('[data-summary="current-time"]')?.textContent).toBeTruthy();
+    expect(popup.querySelector('[data-summary="date"]')?.textContent).toBeTruthy();
+    expect(popup.querySelector('[data-summary="weather-status"]')?.textContent).toBe('Loading…');
+    expect(popup.querySelector('[data-summary="temperature"]')?.textContent).toBe('Loading…');
+    expect(popup.querySelector('[data-summary="heat-index"]')?.textContent).toBe('Loading…');
   });
 
   it('embeds only HTTPS Windy player URLs and safely renders provider text', () => {
@@ -149,3 +150,18 @@ describe('camera markers and popup media', () => {
   });
 });
 
+
+it('opens an explicit list selection before the camera transition enters the city', () => {
+  const popups: FakePopup[] = [];
+  const manager = new CameraMarkerManager({
+    map: {},
+    factory: {
+      marker: (el) => new FakeMarker(el),
+      popup: () => { const popup = new FakePopup(); popups.push(popup); return popup; },
+    },
+    canOpenPopup: () => false,
+  });
+  expect(manager.openPopupForCamera(camera())).toBe(true);
+  expect(popups).toHaveLength(1);
+  manager.destroy();
+});

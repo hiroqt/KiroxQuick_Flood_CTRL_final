@@ -21,6 +21,8 @@ import {
 } from '../../services/reportResolution';
 import {
   depthLabel,
+  deriveSeverity,
+  severityLabel,
   passabilityLabel,
 } from '../../services/reportLifecycle';
 import { Disclaimer } from './Disclaimer';
@@ -45,7 +47,7 @@ export interface ReportPopupProps {
   depth?: ReportDepth;
   /** Structured passability choice, for display. */
   passability?: ReportPassability;
-  /** Structured severity choice (unused for label but kept for completeness). */
+  /** Severity derived from the reported water depth and passability. */
   severity?: ReportSeverity;
   /** Lifecycle: 'ACTIVE' | 'RESOLVED' (absent → ACTIVE). */
   lifecycle?: string;
@@ -53,6 +55,8 @@ export interface ReportPopupProps {
   confirmationCount?: number;
   /** Epoch seconds of the most recent confirmation. */
   lastConfirmedAt?: number | null;
+  /** Epoch seconds when flooding was marked cleared. */
+  resolvedAt?: number | null;
 
   // ---- Lifecycle actions (community only; optional) ----
   onConfirm?: () => void;
@@ -64,6 +68,8 @@ export interface ReportPopupProps {
 
 export function ReportPopup({
   kind,
+  state,
+  severity,
   barangay,
   note,
   updatedAt,
@@ -73,6 +79,7 @@ export function ReportPopup({
   lifecycle,
   confirmationCount,
   lastConfirmedAt,
+  resolvedAt,
   onConfirm,
   onConditionsChanged,
   onResolve,
@@ -136,6 +143,51 @@ export function ReportPopup({
     // Treat the generic auto-description as "no user note".
     !note.startsWith('User-submitted community report');
 
+  const effectiveSeverity = severity ?? (
+    depth || passability
+      ? deriveSeverity(depth ?? 'UNKNOWN', passability ?? 'UNKNOWN')
+      : state === 'RED' ? 'SEVERE'
+        : state === 'ORANGE' ? 'MODERATE'
+          : state === 'YELLOW' ? 'MINOR' : 'UNSURE'
+  );
+  const date = updatedAt !== null && Number.isFinite(updatedAt)
+    ? new Date(updatedAt * 1000) : null;
+  const validDate = date && Number.isFinite(date.getTime()) ? date : null;
+  const details = (
+    <dl className="baharoute-flood-popup__fields">
+      {barangay && <><dt>Barangay</dt><dd data-testid="report-barangay">{barangay}</dd></>}
+      <dt>Last updated</dt>
+      <dd data-testid="report-date-time">
+        {validDate ? (
+          <time dateTime={validDate.toISOString()}>
+            {new Intl.DateTimeFormat('en-PH', {
+              timeZone: 'Asia/Manila', year: 'numeric', month: 'short', day: 'numeric',
+              hour: 'numeric', minute: '2-digit', hour12: true,
+            }).format(validDate)} (PHT)
+          </time>
+        ) : 'Date and time unavailable'}
+      </dd>
+      <dt>Severity</dt>
+      <dd data-testid="report-severity">{severityLabel(effectiveSeverity)}</dd>
+      <dt>Water depth</dt>
+      <dd data-testid="report-depth">{depthLabel(depth ?? 'UNKNOWN')}</dd>
+      <dt>Passability</dt>
+      <dd data-testid="report-passability">{passabilityLabel(passability ?? 'UNKNOWN')}</dd>
+      <dt>Status</dt>
+      <dd data-testid="report-status">{isResolved ? 'Resolved · flooding cleared' : 'Active community report'}</dd>
+      <dt>Source</dt>
+      <dd data-testid="report-source">{source || 'Community report'}</dd>
+    </dl>
+  );
+  const noteBlock = (
+    <div className="baharoute-report-popup__note-block">
+      <p className="baharoute-report-popup__note-title">Note</p>
+      <p className="baharoute-report-popup__note" data-testid="report-note">
+        {hasNote ? note : 'No note provided'}
+      </p>
+    </div>
+  );
+
   // RESOLVED variant: a calm, historical card that states it no longer affects risk.
   if (isResolved) {
     return (
@@ -153,11 +205,13 @@ export function ReportPopup({
           Flooding reported earlier
         </p>
         <p className="baharoute-report-popup__meta">
-          Conditions marked cleared {formatRelativeTime(lastConfirmedAt || updatedAt)}
+          Conditions marked cleared {formatRelativeTime(resolvedAt ?? updatedAt)}
         </p>
         <p className="baharoute-report-popup__resolved-note" data-testid="report-resolved-note">
           This report is no longer contributing to current flood risk.
         </p>
+        {details}
+        {noteBlock}
         <p className="baharoute-report-popup__trust">Community information · unverified</p>
         <Disclaimer variant="general" />
       </section>
@@ -184,6 +238,8 @@ export function ReportPopup({
         </p>
       )}
 
+      {details}
+
       {/* Freshness line with a status dot. */}
       {freshness && (
         <p
@@ -207,13 +263,7 @@ export function ReportPopup({
           : 'No recent confirmation'}
       </p>
 
-      {/* Note with empty state. */}
-      <div className="baharoute-report-popup__note-block">
-        <p className="baharoute-report-popup__note-title">Note</p>
-        <p className="baharoute-report-popup__note" data-testid="report-note">
-          {hasNote ? note : 'No note provided'}
-        </p>
-      </div>
+      {noteBlock}
 
       {/* Trust line — always obvious, never implies official/verified/safe. */}
       <div className="baharoute-report-popup__trust-block" data-testid="report-trust">
