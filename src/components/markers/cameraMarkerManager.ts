@@ -112,14 +112,9 @@ export class CameraMarkerManager {
         const title = this.activePopupContent.querySelector('.baharoute-camera-popup__title');
         if (title) title.textContent = current.camera.name;
         const location = this.activePopupContent.querySelector('.baharoute-camera-popup__location');
-        if (location) location.textContent = formatCameraPlace(current.camera);
+        if (location) location.remove();
         updateCameraSummary(current.camera, this.activePopupContent);
-        const timestamp = this.activePopupContent.querySelector('.baharoute-camera-popup__timestamp');
-        if (timestamp) {
-          timestamp.textContent = current.camera.observedAt !== undefined
-            ? `Source update: ${new Date(current.camera.observedAt * 1000).toLocaleString()}`
-            : 'Source update time unavailable';
-        }
+        this.activePopupContent.querySelector('.baharoute-camera-popup__timestamp')?.remove();
         this.activePopupContent.setAttribute('aria-label', `${current.camera.name} webcam details`);
         if (this.activeImage && this.activeImage.getAttribute('src') !== current.camera.mediaUrl) {
           this.activeImage.src = current.camera.mediaUrl;
@@ -322,11 +317,6 @@ export function createCameraPopupContent(
   title.textContent = camera.name;
   root.appendChild(title);
 
-  const location = doc.createElement('p');
-  location.className = 'baharoute-camera-popup__location';
-  location.textContent = formatCameraPlace(camera);
-  root.appendChild(location);
-
   const summary = doc.createElement('section');
   summary.className = 'baharoute-camera-popup__summary';
   summary.setAttribute('aria-label', 'Camera summary');
@@ -338,20 +328,10 @@ export function createCameraPopupContent(
   appendSummaryField(fields, 'Location', 'location', formatCameraLocation(camera), doc);
   appendSummaryField(fields, 'Current time', 'current-time', formatCurrentTime(), doc);
   appendSummaryField(fields, 'Date', 'date', formatCurrentDate(), doc);
-  appendSummaryField(fields, 'Camera status', 'camera-status', formatCameraStatus(camera), doc);
   appendSummaryField(fields, 'Weather status', 'weather-status', 'Loading…', doc);
   appendSummaryField(fields, 'Temperature', 'temperature', 'Loading…', doc);
   appendSummaryField(fields, 'Heat index', 'heat-index', 'Loading…', doc);
   summary.appendChild(fields);
-  const weatherSource = doc.createElement('p');
-  weatherSource.className = 'baharoute-camera-popup__weather-source';
-  const weatherSourceLink = doc.createElement('a');
-  weatherSourceLink.href = 'https://open-meteo.com/';
-  weatherSourceLink.target = '_blank';
-  weatherSourceLink.rel = 'noopener noreferrer';
-  weatherSourceLink.textContent = 'Open-Meteo';
-  weatherSource.append('Estimated weather from ', weatherSourceLink, '. Heat index is derived using the NWS formula.');
-  summary.appendChild(weatherSource);
   root.appendChild(summary);
 
   const media = doc.createElement('div');
@@ -373,45 +353,16 @@ export function createCameraPopupContent(
       media.appendChild(unavailable);
     }
   } else {
-    const mediaLink = doc.createElement('a');
-    mediaLink.className = 'baharoute-camera-popup__media-link';
-    mediaLink.href = camera.detailUrl ?? 'https://www.windy.com/webcams';
-    mediaLink.target = '_blank';
-    mediaLink.rel = 'noopener noreferrer';
-    mediaLink.setAttribute('aria-label', `Open ${camera.name} on Windy`);
     const image = doc.createElement('img');
     image.className = 'baharoute-camera-popup__image';
     image.src = camera.mediaUrl;
     image.alt = `${camera.name} current webcam image`;
     image.loading = 'lazy';
     image.referrerPolicy = 'no-referrer';
-    mediaLink.appendChild(image);
-    media.appendChild(mediaLink);
+    media.appendChild(image);
   }
   root.appendChild(media);
 
-  const timestamp = doc.createElement('p');
-  timestamp.className = 'baharoute-camera-popup__timestamp';
-  timestamp.textContent = camera.observedAt !== undefined
-    ? `Source update: ${new Date(camera.observedAt * 1000).toLocaleString()}`
-    : 'Source update time unavailable';
-  root.appendChild(timestamp);
-
-  const attribution = doc.createElement('p');
-  attribution.className = 'baharoute-camera-popup__attribution';
-  const providerLink = doc.createElement('a');
-  providerLink.href = 'https://www.windy.com/';
-  providerLink.target = '_blank';
-  providerLink.rel = 'noopener noreferrer';
-  providerLink.textContent = 'Windy.com';
-  attribution.append('Webcams provided by ', providerLink, ' — ');
-  const addLink = doc.createElement('a');
-  addLink.href = 'https://www.windy.com/webcams/add';
-  addLink.target = '_blank';
-  addLink.rel = 'noopener noreferrer';
-  addLink.textContent = 'add a webcam';
-  attribution.append(addLink);
-  root.appendChild(attribution);
   return root;
 }
 
@@ -437,8 +388,6 @@ function appendSummaryField(
 function updateCameraSummary(camera: MetroManilaTrafficCamera, root: HTMLElement): void {
   const location = root.querySelector<HTMLElement>('[data-summary="location"]');
   if (location) location.textContent = formatCameraLocation(camera);
-  const status = root.querySelector<HTMLElement>('[data-summary="camera-status"]');
-  if (status) status.textContent = formatCameraStatus(camera);
 }
 
 function formatCameraLocation(camera: MetroManilaTrafficCamera): string {
@@ -452,12 +401,6 @@ function formatCameraPlace(camera: MetroManilaTrafficCamera): string {
     return `${areaLabel}, ${camera.city.name}`;
   }
   return camera.city.name;
-}
-
-function formatCameraStatus(camera: MetroManilaTrafficCamera): string {
-  if (camera.status === 'active') return 'Active';
-  if (camera.status === 'inactive') return 'Inactive';
-  return 'Unavailable';
 }
 
 function formatCurrentTime(now = new Date()): string {

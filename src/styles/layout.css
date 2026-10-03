@@ -1141,33 +1141,41 @@ body,
   transform: scale(1.06);
 }
 .baharoute-camera-popup {
-  width: min(300px, calc(100vw - 64px));
+  display: flex;
+  flex-direction: column;
+  width: min(244px, calc(100vw - 64px));
   max-height: min(72vh, 620px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  color: #172b36;
+  color: #f8fafc;
   font-family: inherit;
+  background: #17191f;
+  border-radius: 0 0 12px 12px;
+  box-shadow: 0 8px 24px rgba(9, 13, 20, 0.34);
 }
+.baharoute-camera-popup__media { order: -1; }
+.baharoute-camera-popup__title { order: 0; padding: 10px 12px 0; }
+.baharoute-camera-popup__summary { margin-right: 12px; margin-left: 12px; }
+.baharoute-camera-popup__summary { order: 1; }
+.mapboxgl-popup-content:has(.baharoute-camera-popup) {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: transparent;
+}
+.mapboxgl-popup:has(.baharoute-camera-popup) .mapboxgl-popup-tip { border-top-color: #17191f; }
+.mapboxgl-popup-close-button { color: #64748b; }
 .baharoute-camera-popup__title {
-  margin: 0 0 4px;
-  font-size: 15px;
+  margin: 0 0 5px;
+  font-size: 14px;
   line-height: 1.3;
 }
-.baharoute-camera-popup__location,
-.baharoute-camera-popup__timestamp,
-.baharoute-camera-popup__attribution,
-.baharoute-camera-popup__weather-source {
-  margin: 0 0 8px;
-  color: #52636d;
-  font-size: 12px;
-  line-height: 1.4;
-}
 .baharoute-camera-popup__summary {
-  margin: 10px 0;
-  padding: 10px;
-  border: 1px solid #d9e3e7;
+  margin: 8px 0;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 8px;
-  background: #f7fafb;
+  background: rgba(255, 255, 255, 0.06);
 }
 .baharoute-camera-popup__summary h3 {
   margin: 0 0 8px;
@@ -1182,27 +1190,23 @@ body,
   line-height: 1.4;
 }
 .baharoute-camera-popup__summary-fields dt {
-  color: #52636d;
+  color: #b9bec8;
 }
 .baharoute-camera-popup__summary-fields dd {
   margin: 0;
   font-weight: 600;
 }
-.baharoute-camera-popup__weather-source {
-  margin: 8px 0 0;
-  font-size: 10px;
-}
 .baharoute-camera-popup__media {
   overflow: hidden;
-  margin: 8px 0;
-  border-radius: 8px;
+  margin: 0;
+  border-radius: 12px 12px 0 0;
   background: #101c22;
 }
 .baharoute-camera-popup__image,
 .baharoute-camera-popup__video {
   display: block;
   width: 100%;
-  max-width: 300px;
+  max-width: 244px;
   height: auto;
   aspect-ratio: 16 / 9;
   object-fit: cover;
@@ -1210,11 +1214,6 @@ body,
 }
 .baharoute-camera-popup__video {
   height: 169px;
-}
-.baharoute-camera-popup__attribution a,
-.baharoute-camera-popup__weather-source a {
-  color: #075b75;
-  text-decoration: underline;
 }
 .baharoute-flood-popup__title {
   margin: 0 40px 8px 0;
