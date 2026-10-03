@@ -1,3 +1,4 @@
+import type { FloodVoiceStatus } from '../../services/floodVoiceAgent';
 // src/components/driving/DrivingHud.tsx
 //
 // Driving-mode UI shown only while the simulated drive runs:
@@ -11,6 +12,7 @@
 // text (not color alone).
 
 import type { ReactNode } from 'react';
+import { SIM_PLAYBACK_RATE, SIM_PLAYBACK_RATE_OPTIONS, type SimPlaybackRate } from '../../simulation/DriveSimulator';
 import { FLOOD_STATE_COLORS } from '../../map/basemap/colorTokens';
 import { floodStateLabel } from '../../layers/visualMapping';
 import { DRIVE_HAZARDS_SOURCE_LABEL } from '../../data/fixtures/driveHazards';
@@ -25,10 +27,14 @@ import { DRIVE_RADIUS_OPTIONS, type DriveCameraMode, type DriveRadius } from '..
 
 export interface DrivingHudProps {
   nav: NavState;
+  voiceStatus?: FloodVoiceStatus;
+  onVoiceToggle?: () => void;
   camera: DriveCameraMode;
   radius: DriveRadius;
   onCameraChange: (mode: DriveCameraMode) => void;
   onRadiusChange: (radius: DriveRadius) => void;
+  playbackRate?: SimPlaybackRate;
+  onPlaybackRateChange?: (rate: SimPlaybackRate) => void;
   onStop: () => void;
   /** Injectable clock for the ETA (tests). */
   now?: () => Date;
@@ -43,10 +49,14 @@ const CAMERA_LABELS: Record<DriveCameraMode, string> = {
 
 export function DrivingHud({
   nav,
+  voiceStatus,
+  onVoiceToggle,
   camera,
   radius,
   onCameraChange,
   onRadiusChange,
+  playbackRate = SIM_PLAYBACK_RATE,
+  onPlaybackRateChange,
   onStop,
   now = () => new Date(),
   children,
@@ -78,7 +88,7 @@ export function DrivingHud({
       {/* A pending route choice replaces the hazard chip. */}
       {children}
 
-      {!children && nav.hazard && (
+      {nav.hazard && (
         <div
           className="baharoute-drive-hazard"
           role="status"
@@ -90,9 +100,9 @@ export function DrivingHud({
             style={{ background: FLOOD_STATE_COLORS[nav.hazard.state].hex }}
           />
           <span>
-            <strong>{floodStateLabel(nav.hazard.state)}</strong> ahead ·{' '}
+            <strong>{nav.hazard.passability ? (`${nav.hazard.isDemo === false ? 'Reported flood' : 'Demo flood'} — ${nav.hazard.passability === 'passable' ? 'passable' : 'not passable'}`) : floodStateLabel(nav.hazard.state)}</strong> ahead ·{' '}
             {formatDistance(nav.toHazardM)} · {nav.hazard.street}
-            <small className="baharoute-drive-hazard__source">{DRIVE_HAZARDS_SOURCE_LABEL}</small>
+            <small className="baharoute-drive-hazard__source">{nav.hazard.sourceLabel ?? DRIVE_HAZARDS_SOURCE_LABEL}</small>
           </span>
         </div>
       )}
@@ -105,6 +115,41 @@ export function DrivingHud({
           </span>
         </div>
         <div className="baharoute-drive-bar__options">
+          {voiceStatus && (
+            <button
+              type="button"
+              className="baharoute-segmented__option baharoute-focus-ring"
+              aria-pressed={voiceStatus === 'ready'}
+              aria-label={
+                voiceStatus === 'ready' ? 'Mute flood voice alerts' : 'Enable flood voice alerts'
+              }
+              disabled={voiceStatus === 'unavailable'}
+              onClick={onVoiceToggle}
+              title="Spoken warnings for flood reports ahead within 900 meters"
+            >
+              {voiceStatus === 'ready'
+                ? 'Voice on · 900 m'
+                : voiceStatus === 'muted'
+                  ? 'Voice muted'
+                  : voiceStatus === 'error'
+                    ? 'Retry voice alerts'
+                    : 'Voice unavailable'}
+            </button>
+          )}
+          <div role="group" aria-label="Simulation speed" className="baharoute-segmented">
+            {SIM_PLAYBACK_RATE_OPTIONS.map((rate) => (
+              <button
+                key={rate}
+                type="button"
+                className="baharoute-segmented__option baharoute-focus-ring"
+                aria-pressed={playbackRate === rate}
+                aria-label={`Simulation speed ${rate}×`}
+                onClick={() => onPlaybackRateChange?.(rate)}
+              >
+                {rate}×
+              </button>
+            ))}
+          </div>
           <div role="group" aria-label="Camera" className="baharoute-segmented">
             {(['driver', 'follow'] as const).map((mode) => (
               <button

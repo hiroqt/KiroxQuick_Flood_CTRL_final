@@ -1509,12 +1509,29 @@ body,
 
 /* Reroute choice (driving mode). */
 .baharoute-reroute {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
   padding: 14px 16px;
   border-radius: var(--baharoute-radius);
   border-top: 6px solid;
   background: var(--baharoute-surface);
   color: var(--baharoute-text);
   box-shadow: var(--baharoute-shadow);
+}
+/* Route choices sit beside the road view, outside the centered driving HUD. */
+.baharoute-drive-hud > .baharoute-reroute {
+  position: absolute;
+  top: calc(110px + env(safe-area-inset-top, 0px));
+  right: calc(12px + env(safe-area-inset-right, 0px));
+  width: min(320px, 34vw);
+  max-height: calc(100dvh - 250px);
+}
+.baharoute-drive-hud:has(> .baharoute-reroute) > .baharoute-drive-hazard {
+  position: absolute;
+  top: calc(110px + env(safe-area-inset-top, 0px));
+  left: calc(12px + env(safe-area-inset-left, 0px));
+  width: min(300px, 34vw);
 }
 .baharoute-reroute__title {
   margin: 0;
@@ -1529,8 +1546,14 @@ body,
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: min(42vh, 340px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .baharoute-reroute__option {
+  flex: 0 0 auto;
   display: flex;
   flex-direction: column;
   align-items: flex-start;
@@ -1592,7 +1615,7 @@ body,
   }
   .baharoute-drive-bar__options {
     width: 100%;
-    flex-wrap: nowrap;
+    flex-wrap: wrap;
     justify-content: space-between;
     gap: 6px;
   }
@@ -1614,16 +1637,33 @@ body,
     max-height: 40dvh;
     overflow: hidden;
   }
+  .baharoute-drive-hud > .baharoute-reroute {
+    top: calc(88px + env(safe-area-inset-top, 0px));
+    right: calc(8px + env(safe-area-inset-right, 0px));
+    width: min(46vw, 210px);
+    max-height: min(48dvh, calc(100dvh - 240px));
+    padding: 8px;
+  }
+  .baharoute-drive-hud:has(> .baharoute-reroute) > .baharoute-drive-hazard {
+    top: calc(88px + env(safe-area-inset-top, 0px));
+    left: calc(8px + env(safe-area-inset-left, 0px));
+    width: min(44vw, 200px);
+    padding: 8px;
+    font-size: 12px;
+  }
+  .baharoute-reroute__options {
+    max-height: none;
+  }
   .baharoute-reroute__title {
-    font-size: 16px;
+    font-size: 14px;
   }
   .baharoute-reroute__desc {
-    margin: 2px 0 8px;
-    font-size: 13px;
+    margin: 4px 0 8px;
+    font-size: 12px;
   }
   .baharoute-reroute__option {
-    padding: 8px 12px;
-    font-size: 13px;
+    padding: 8px;
+    font-size: 12px;
   }
 }
 

@@ -1,4 +1,7 @@
-﻿// src/components/MapView.tsx
+import type { FloodReport } from '../types/flood';
+import { collectRouteFloods, collectReportedFloods, floodHazardsOnRoute, type LocatedRouteFlood } from '../services/routeFloodHazards';
+import { findFloodAvoidingReroutes, rankFloodAvoidingOffers, rebaseMovingReroute, avoidsFloodPoints } from '../services/floodAvoidingReroute';
+// src/components/MapView.tsx
 //
 // React wrapper around MapManager (design â†’ Architecture: "React never touches
 // the raw map object directly; MapView mounts a container div and delegates to
@@ -30,6 +33,7 @@
 // constructor itself can also be faked without replacing the manager. The
 // DataSource and MarkerManager factory are likewise injectable for tests.
 
+import { FloodVoiceAgent, type FloodVoiceStatus } from '../services/floodVoiceAgent';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MapManager,
@@ -52,14 +56,13 @@ import { MapContextControl } from './controls/MapContextControl';
 import { MapModeSwitcher, type MapMode } from './controls/MapModeSwitcher';
 import { RotateControl } from './controls/RotateControl';
 import { DriveSimulator } from '../simulation/DriveSimulator';
-import { SIM_SPEED_MPS } from '../simulation/DriveSimulator';
+import { SIM_SPEED_MPS, SIM_PLAYBACK_RATE, type SimPlaybackRate } from '../simulation/DriveSimulator';
 import { PITX_TO_MOA_MANEUVERS, PITX_TO_MOA_ROUTE } from '../data/fixtures/pitxToMoaRoute';
 import { type DriveHazard } from '../data/fixtures/driveHazards';
 import { PITX_TO_MOA_REROUTES, type FloodReroute } from '../data/fixtures/floodReroutes';
 import type { RouteManeuver } from '../data/fixtures/pitxToMoaRoute';
 import {
-  findRerouteOffer,
-  formatRerouteDelta,
+  branchPoint,
   stitchReroute,
   type RerouteOffer,
 } from '../simulation/reroute';
@@ -341,7 +344,7 @@ function DriveRiskBanner({
     <div className="baharoute-drive-risk" role="status" data-testid="drive-risk-banner">
       <span className="baharoute-drive-risk__label">Route risk: {riskText}</span>
       <span className="baharoute-drive-risk__sep" aria-hidden="true">
-        Â·
+        ·
       </span>
       <span className="baharoute-drive-risk__freshness">{freshness}</span>
     </div>
@@ -1638,9 +1641,19 @@ export function MapView({
   // by the driving HUD (next turn, flood-ahead banner, trip progress).
   const driving = tripStage === 'navigating';
   const [nav, setNav] = useState<NavState | null>(null);
+  const [voiceStatus, setVoiceStatus] = useState<FloodVoiceStatus>('ready');
+  const voiceAgentRef = useRef<FloodVoiceAgent | null>(null);
+  if (!voiceAgentRef.current) voiceAgentRef.current = new FloodVoiceAgent(setVoiceStatus);
   const [driveCamera, setDriveCameraState] = useState<DriveCameraMode>('driver');
   const [driveRadius, setDriveRadiusState] = useState<DriveRadius>(250);
+  const [drivePlaybackRate, setDrivePlaybackRate] = useState<SimPlaybackRate>(SIM_PLAYBACK_RATE);
+  const drivePlaybackRateRef = useRef<SimPlaybackRate>(SIM_PLAYBACK_RATE);
   const simulatorRef = useRef<DriveSimulator | null>(null);
+  const handleDrivePlaybackRate = (rate: SimPlaybackRate): void => {
+    drivePlaybackRateRef.current = rate;
+    setDrivePlaybackRate(rate);
+    simulatorRef.current?.setPlaybackRate(rate);
+  };
   /** Last rendered HUD key: only re-render React when displayed text changes. */
   const navKeyRef = useRef('');
   /**
@@ -1650,12 +1663,35 @@ export function MapView({
    */
   const [driveRisk, setDriveRisk] = useState<RouteOption | null>(null);
 
-  // Reroute: offered while driving (the car never stops) when a demo flood
-  // report is within 1 km. If the driver passes the branch point of an offered
-  // reroute without choosing, it is missed and the next reroute is offered.
+  // Keep moving while the driver reviews flood-avoiding alternatives.
   const [offer, setOffer] = useState<RerouteOffer | null>(null);
-  /** Hazards the driver chose to keep driving through: stop offering. */
-  const dismissedRef = useRef<Set<string>>(new Set());
+  const [routeOffers, setRouteOffers] = useState<readonly RerouteOffer[]>([]);
+  const routeOffersRef = useRef<readonly RerouteOffer[]>([]);
+  const continuedHazardsRef = useRef(new Set<string>());
+  const offerDisplayKeyRef = useRef('');
+  const [rerouteStatus, setRerouteStatus] = useState<'searching' | 'unavailable' | null>(null);
+  const rerouteGenerationRef = useRef(0);
+  const requestedReroutesRef = useRef(new Set<string>());
+  const reroutePendingRef = useRef(false);
+  const rerouteAttemptMRef = useRef(-Infinity);
+  const floodPointsRef = useRef<Array<[number, number]>>([]);
+  const locatedFloodsRef = useRef<LocatedRouteFlood[]>([]);
+  const reportedFloodsRef = useRef<LocatedRouteFlood[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const reportLayers = source.listLayers().filter((layer) => layer.id === 'floodReports' || layer.id === 'communityReports');
+    void Promise.allSettled(reportLayers.map((layer) => source.getLayer<FloodReport>(layer.id).load())).then((results) => {
+      if (cancelled) return;
+      reportedFloodsRef.current = results.flatMap((result) => result.status === 'fulfilled'
+        ? collectReportedFloods(result.value.items ?? [], result.value.isDemo) : []);
+      if (simulatorRef.current) {
+        locatedFloodsRef.current = [...locatedFloodsRef.current.filter((f) => !f.hazard.id.startsWith('report:')), ...reportedFloodsRef.current];
+        floodPointsRef.current = locatedFloodsRef.current.map((f) => f.position);
+        activeHazardsRef.current = floodHazardsOnRoute(activeBaseRouteRef.current.points, locatedFloodsRef.current);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [source]);
   /** Hazards still ahead on the ACTIVE route (empty after a reroute). */
   const activeHazardsRef = useRef<ReadonlyArray<DriveHazard>>([]);
   /** Reroutes available on the ACTIVE route (empty for non-demo routes). */
@@ -1668,18 +1704,24 @@ export function MapView({
   const activeBaseRouteRef = useRef<MeasuredRoute>(BASE_ROUTE);
   /** Maneuvers of the ACTIVE route's original line (for reroute stitching). */
   const activeBaseManeuversRef = useRef<ReadonlyArray<RouteManeuver>>(PITX_TO_MOA_MANEUVERS);
+  const activeDurationSRef = useRef(0);
   /** Latest frame, so a tap uses the vehicle's current position. */
   const lastFrameRef = useRef<DriveFrame | null>(null);
-  /** Identity of the rendered offer, to avoid per-frame React updates. */
-  const offerKeyRef = useRef('');
 
   const stopDrive = (): void => {
+    rerouteGenerationRef.current += 1;
+    requestedReroutesRef.current.clear();
+    reroutePendingRef.current = false;
+    rerouteAttemptMRef.current = -Infinity;
+    setRerouteStatus(null);
+    routeOffersRef.current = [];
+    setRouteOffers([]);
+    continuedHazardsRef.current.clear();
+    voiceAgentRef.current?.stop();
     simulatorRef.current?.stop();
     simulatorRef.current = null;
     managerRef.current?.endDriveView?.();
     navKeyRef.current = '';
-    offerKeyRef.current = '';
-    dismissedRef.current = new Set();
     activeHazardsRef.current = [];
     activeReroutesRef.current = [];
     lastFrameRef.current = null;
@@ -1687,19 +1729,79 @@ export function MapView({
     setNav(null);
     setDriveRisk(null);
     // Return to the comparison so the commuter can pick another route or search.
+    setPopup(null);
     setTripStage(routeOptions.length > 0 ? 'comparing' : 'search');
+    if (routeOptions.length > 0 && tripOrigin && tripDestination) {
+      managerRef.current?.showRoutePreview?.(
+        previewRoutesFor(routeOptions),
+        selectedRouteId ?? '',
+        [
+          [tripOrigin.coord[0], tripOrigin.coord[1]],
+          [tripDestination.coord[0], tripDestination.coord[1]],
+        ],
+      );
+    }
   };
 
-  /** Current reroute offer for a frame on the active (original) route. */
-  const offerFor = (frame: DriveFrame, hazardId: string | null): RerouteOffer | null =>
-    findRerouteOffer(
-      activeBaseRouteRef.current,
-      frame.traveledM,
-      hazardId,
-      activeReroutesRef.current,
-      dismissedRef.current,
-      SIM_SPEED_MPS,
-    );
+  /** Calculate joinable alternatives ahead of the moving vehicle. */
+  const requestDynamicReroute = async (hazardId: string): Promise<void> => {
+    const frame = lastFrameRef.current;
+    if (!frame || requestedReroutesRef.current.has(hazardId)) return;
+    requestedReroutesRef.current.add(hazardId);
+    reroutePendingRef.current = true;
+    rerouteAttemptMRef.current = frame.traveledM;
+    setRerouteStatus('searching');
+    const generation = ++rerouteGenerationRef.current;
+    const base = activeBaseRouteRef.current;
+    const destination = base.points[base.points.length - 1];
+    const hazard = activeHazardsRef.current.find((h) => h.id === hazardId);
+    // Request from an upcoming road position so the vehicle can join after the response arrives.
+    const leadM = Math.min(350, Math.max(0, ((hazard?.atM ?? frame.traveledM) - frame.traveledM) * 0.4));
+    const routingM = Math.min(base.length, Math.max(frame.traveledM, (hazard?.atM ?? frame.traveledM) - 900) + leadM);
+    const routingPosition = pointAlong(base, routingM);
+    try {
+      // Join every available bundled alternative from the upcoming road position.
+      const existingRoads: FloodReroute[] = routeOptions.map(({ candidate }) => ({
+        hazardId, fromM: 0, route: candidate.route, maneuvers: candidate.maneuvers,
+        distanceM: candidate.distanceM, originalRemainingM: base.length,
+      }));
+      const bundled = [...activeReroutesRef.current, ...existingRoads].flatMap((reroute) => {
+        const branch = branchPoint(activeBaseRouteRef.current, reroute);
+        if (!branch || branch.baseM < routingM) return [];
+        const next = stitchReroute(activeBaseRouteRef.current, activeBaseManeuversRef.current, reroute, routingM);
+        if (!next || !avoidsFloodPoints(next.route, floodPointsRef.current)) return [];
+        return [{ id: `bundled-${reroute.hazardId}-${reroute.fromM}`, label: 'Bundled flood-avoiding road route',
+          route: next.route, maneuvers: next.maneuvers, distanceM: next.lengthM,
+          durationS: next.lengthM / SIM_SPEED_MPS, hazards: [] }];
+      });
+      const context = routePlanningContext();
+      const speed = activeDurationSRef.current > 0 ? frame.lengthM / activeDurationSRef.current : SIM_SPEED_MPS;
+      const publish = (options: readonly RerouteOffer[]): void => {
+        const current = lastFrameRef.current;
+        const verified = current ? options.flatMap((option) => {
+          const joined = rebaseMovingReroute(option, activeBaseRouteRef.current, activeBaseManeuversRef.current, current.traveledM, floodPointsRef.current);
+          return joined ? [joined] : [];
+        }) : [];
+        routeOffersRef.current = verified;
+        setRouteOffers(verified);
+        setOffer(verified[0] ?? null);
+      };
+      publish(rankFloodAvoidingOffers(bundled, routingPosition, destination, floodPointsRef.current,
+        hazardId, frame.lengthM - routingM, speed, context));
+      const result = await findFloodAvoidingReroutes(
+        routingPosition, destination, floodPointsRef.current, hazardId,
+        frame.lengthM - routingM, speed,
+        { mapboxToken: config.tileKey, mode: travelMode }, context, bundled,
+      );
+      if (generation !== rerouteGenerationRef.current) return;
+      publish(result);
+      setRerouteStatus(routeOffersRef.current.length ? null : 'unavailable');
+    } catch {
+      if (generation === rerouteGenerationRef.current) setRerouteStatus('unavailable');
+    } finally {
+      if (generation === rerouteGenerationRef.current) reroutePendingRef.current = false;
+    }
+  };
 
   /** Plays `route` (optionally from `fromM`), driving the camera + HUD. */
   const runSimulator = (
@@ -1711,26 +1813,48 @@ export function MapView({
     simulatorRef.current?.stop();
     // Measure the SAME geometry the simulator drives (dev diagnostics only).
     const measuredForDiag = measureRoute(route);
+    lastFrameRef.current = null;
     const simulator: DriveSimulator = new DriveSimulator({
       route,
+      playbackRate: drivePlaybackRateRef.current,
       onFrame: (frame) => {
         lastFrameRef.current = frame;
         logDriveFrame(measuredForDiag, frame);
         manager.updateDrive?.(frame);
+        voiceAgentRef.current?.update(frame, measuredForDiag, activeHazardsRef.current);
         const state = computeNavState(
           frame.traveledM,
           frame.lengthM,
           maneuvers,
           activeHazardsRef.current,
-          SIM_SPEED_MPS,
+          activeDurationSRef.current > 0 ? frame.lengthM / activeDurationSRef.current : SIM_SPEED_MPS,
+          measuredForDiag,
         );
-        const pending = offerFor(frame, state.hazard?.id ?? null);
-        const offerKey = pending
-          ? `${pending.reroute.hazardId}@${pending.reroute.fromM}|${formatRerouteDelta(pending)}|${formatDistance(pending.toBranchM)}|${pending.isRetry}`
-          : '';
-        if (offerKey !== offerKeyRef.current) {
-          offerKeyRef.current = offerKey;
-          setOffer(pending);
+        const upcomingHazard = activeHazardsRef.current.find((h) => h.atM >= frame.traveledM && h.atM - frame.traveledM <= 2500);
+        if (upcomingHazard && !continuedHazardsRef.current.has(upcomingHazard.id) &&
+          (!requestedReroutesRef.current.has(upcomingHazard.id) ||
+            (!reroutePendingRef.current && !routeOffersRef.current.length && frame.traveledM - rerouteAttemptMRef.current >= 150))) {
+          // Keep moving while alternatives are calculated.
+          const hazardId = upcomingHazard.id;
+          requestedReroutesRef.current.delete(hazardId);
+          const generation = rerouteGenerationRef.current;
+          void Promise.resolve().then(() => {
+            if (generation === rerouteGenerationRef.current) return requestDynamicReroute(hazardId);
+          });
+        }
+        if (routeOffersRef.current.length) {
+          const joinable = routeOffersRef.current.flatMap((option) => {
+            const joined = rebaseMovingReroute(option, activeBaseRouteRef.current, activeBaseManeuversRef.current, frame.traveledM, floodPointsRef.current);
+            return joined ? [joined] : [];
+          });
+          const displayKey = joinable.map((o) => `${o.reroute.hazardId}:${formatDistance(o.toBranchM)}`).join('|');
+          if (displayKey !== offerDisplayKeyRef.current) {
+            offerDisplayKeyRef.current = displayKey;
+            setRouteOffers(joinable);
+            setOffer(joinable[0] ?? null);
+            if (!joinable.length) setRerouteStatus('unavailable');
+          }
+          if (!joinable.length) routeOffersRef.current = [];
         }
         const key = [
           state.next?.atM,
@@ -2347,15 +2471,26 @@ export function MapView({
     option = current;
     const manager = managerRef.current;
     const candidate = option.candidate;
-    // Preserve the reroute demo ONLY for the flagship PITXâ†’MOA primary route.
-    const isDemoRoute = candidate.id === 'pitx-moa-primary';
-    activeHazardsRef.current = candidate.hazards;
+    // All bundled journey choices can join the verified road detours.
+    const isDemoRoute = candidate.id.startsWith('pitx-moa-');
+    rerouteGenerationRef.current += 1;
+    requestedReroutesRef.current.clear();
+    reroutePendingRef.current = false;
+    rerouteAttemptMRef.current = -Infinity;
+    continuedHazardsRef.current.clear();
+    routeOffersRef.current = [];
+    setRouteOffers([]);
+    setRerouteStatus(null);
+    locatedFloodsRef.current = [...collectRouteFloods(routeOptions.map((o) => o.candidate)), ...reportedFloodsRef.current];
+    floodPointsRef.current = locatedFloodsRef.current.map((flood) => flood.position);
+    activeHazardsRef.current = floodHazardsOnRoute(candidate.route, locatedFloodsRef.current);
     activeReroutesRef.current = isDemoRoute ? PITX_TO_MOA_REROUTES : [];
     activeBaseRouteRef.current = measureRoute(candidate.route);
     activeBaseManeuversRef.current = candidate.maneuvers;
-    dismissedRef.current = new Set();
+    activeDurationSRef.current = candidate.durationS;
     setDriveRisk(option);
     setTripStage('navigating');
+    voiceAgentRef.current?.start();
     // Remove the flat route-preview overlays before the Driver Mode 3D camera.
     manager?.clearRoutePreview?.();
 
@@ -2376,6 +2511,8 @@ export function MapView({
 
   /** Returns to the search step, clearing the comparison; reframes the trip. */
   const handleTripBack = (): void => {
+    setPopup(null);
+    handleMapModeChange('route');
     setRouteOptions([]);
     setSelectedRouteId(null);
     setPickTarget(null);
@@ -2447,36 +2584,53 @@ export function MapView({
    * The new route continues on the current road to the turn-off, then onto
    * the flood-avoiding road; directions and ETA update to it.
    */
-  const handleReroute = (): void => {
+  const handleReroute = (chosen?: RerouteOffer): void => {
     const manager = managerRef.current;
     const frame = lastFrameRef.current;
-    if (!offer || !manager || !frame) return;
+    const selected = chosen ?? offer;
+    if (!selected || !manager || !frame) return;
     // Re-evaluate at tap time: the car kept moving since the card rendered.
-    const fresh = offerFor(frame, offer.reroute.hazardId);
-    if (!fresh) return; // Too late for any turn-off; nothing to switch to.
-    const next = stitchReroute(
+    const fresh = rebaseMovingReroute(selected, activeBaseRouteRef.current, activeBaseManeuversRef.current, frame.traveledM, floodPointsRef.current);
+    if (!fresh) {
+      requestedReroutesRef.current.delete(selected.reroute.hazardId);
+      void requestDynamicReroute(selected.reroute.hazardId);
+      return;
+    }
+    const next = fresh.directRoute ?? stitchReroute(
       activeBaseRouteRef.current,
       activeBaseManeuversRef.current,
       fresh.reroute,
       frame.traveledM,
     );
     if (!next) return; // Not joinable on real roads (never offered in practice).
+    const updated = driveRisk ? compareRoutes([{
+      ...driveRisk.candidate, id: `${driveRisk.candidate.id}-rerouted`, label: 'Flood-avoiding reroute',
+      route: next.route, maneuvers: next.maneuvers, distanceM: next.lengthM,
+      durationS: fresh.durationS ?? next.lengthM / SIM_SPEED_MPS, hazards: [], demoFloods: [],
+    }], routePlanningContext())[0] : null;
+    if (!avoidsFloodPoints(next.route, floodPointsRef.current) ||
+      (updated && (isRouteStartBlocked(updated) || updated.risk.level === 'REPORTED_FLOODING' || updated.risk.level === 'CONFIRMED_NOT_PASSABLE'))) {
+      requestedReroutesRef.current.delete(fresh.reroute.hazardId);
+      setOffer(null);
+      void requestDynamicReroute(fresh.reroute.hazardId);
+      return;
+    }
+    rerouteGenerationRef.current += 1;
+    setRerouteStatus(null);
+    routeOffersRef.current = [];
+    setRouteOffers([]);
+    voiceAgentRef.current?.cancelPending();
     // The reroute excludes every demo hazard, so none remain ahead on it.
-    activeHazardsRef.current = [];
+    activeHazardsRef.current = floodHazardsOnRoute(next.route, locatedFloodsRef.current);
     activeReroutesRef.current = [];
-    offerKeyRef.current = '';
     navKeyRef.current = '';
     setOffer(null);
+    if (updated) setDriveRisk(updated);
+    activeBaseRouteRef.current = measureRoute(next.route);
+    activeBaseManeuversRef.current = next.maneuvers;
+    activeDurationSRef.current = fresh.durationS ?? next.lengthM / SIM_SPEED_MPS;
     manager.setDriveRoute?.(next.route);
     runSimulator(manager, next.route, next.maneuvers);
-  };
-
-  /** Keeps the current route; no more reroutes for this hazard. */
-  const handleKeepRoute = (): void => {
-    if (!offer) return;
-    dismissedRef.current.add(offer.reroute.hazardId);
-    offerKeyRef.current = '';
-    setOffer(null);
   };
 
   const handleDriveCamera = (mode: DriveCameraMode): void => {
@@ -2488,7 +2642,11 @@ export function MapView({
     managerRef.current?.setDriveRadius?.(radius);
   };
   // Stop the animation loop if the map unmounts mid-drive.
-  useEffect(() => () => simulatorRef.current?.stop(), []);
+  useEffect(() => () => {
+    rerouteGenerationRef.current += 1;
+    simulatorRef.current?.stop();
+    voiceAgentRef.current?.stop();
+  }, []);
 
   // Show/hide the HISTORICAL evidence overlay. Context only — this toggles ONLY
   // the historical layer and never current risk/closures. Markers appear only
@@ -2897,23 +3055,37 @@ export function MapView({
       {driving && nav && (
         <DrivingHud
           nav={nav}
+          voiceStatus={voiceStatus}
+          onVoiceToggle={() => voiceAgentRef.current?.setEnabled(voiceStatus !== 'ready')}
           camera={driveCamera}
           radius={driveRadius}
+          playbackRate={drivePlaybackRate}
+          onPlaybackRateChange={handleDrivePlaybackRate}
           onCameraChange={handleDriveCamera}
           onRadiusChange={handleDriveRadius}
           onStop={stopDrive}
         >
-          {offer && nav.hazard ? (
+          {nav.hazard && !continuedHazardsRef.current.has(nav.hazard.id) ? (
             <RerouteOfferCard
-              offer={offer}
-              hazard={nav.hazard}
-              toHazardM={nav.toHazardM}
-              onReroute={handleReroute}
-              onKeep={handleKeepRoute}
+              offer={offer} alternatives={routeOffers} status={rerouteStatus}
+              hazard={nav.hazard} toHazardM={nav.toHazardM} onReroute={handleReroute}
+              onKeep={() => {
+                if (nav.hazard?.passability !== 'passable') return;
+                continuedHazardsRef.current.add(nav.hazard.id);
+                rerouteGenerationRef.current += 1;
+                routeOffersRef.current = [];
+                setRouteOffers([]);
+                setOffer(null);
+                setRerouteStatus(null);
+              }}
+              onReview={stopDrive}
+              onRetry={() => {
+                if (!nav.hazard) return;
+                requestedReroutesRef.current.delete(nav.hazard.id);
+                void requestDynamicReroute(nav.hazard.id);
+              }}
             />
-          ) : (
-            driveRisk && <DriveRiskBanner option={driveRisk} status={riskStatus} />
-          )}
+          ) : driveRisk && <DriveRiskBanner option={driveRisk} status={riskStatus} />}
         </DrivingHud>
       )}
 

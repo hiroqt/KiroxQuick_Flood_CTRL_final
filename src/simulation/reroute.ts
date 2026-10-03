@@ -42,6 +42,10 @@ export interface StitchedRoute {
 
 export interface RerouteOffer {
   reroute: FloodReroute;
+  /** Provider route calculated from the paused vehicle position. */
+  directRoute?: StitchedRoute;
+  /** ETA from provider directions, or an explicit bundled estimate. */
+  durationS?: number;
   /** Meters from the vehicle to the reroute's turn-off. */
   toBranchM: number;
   /** Extra distance vs. staying on the current route (can be negative). */

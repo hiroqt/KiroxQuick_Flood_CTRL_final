@@ -23,6 +23,7 @@ describe('RerouteOffer', () => {
   function renderOffer(isRetry = false) {
     const onReroute = vi.fn();
     const onKeep = vi.fn();
+    const onReview = vi.fn();
     render(
       <RerouteOffer
         offer={{ ...offer, isRetry }}
@@ -30,14 +31,15 @@ describe('RerouteOffer', () => {
         toHazardM={1000}
         onReroute={onReroute}
         onKeep={onKeep}
+        onReview={onReview}
       />,
     );
-    return { onReroute, onKeep };
+    return { onReroute, onKeep, onReview };
   }
 
   it('presents two labeled route options with honest wording', async () => {
     const user = userEvent.setup();
-    const { onReroute, onKeep } = renderOffer();
+    const { onReroute, onKeep, onReview } = renderOffer();
     const dialog = screen.getByRole('alertdialog');
     expect(dialog).toHaveTextContent('Reported Flooding ahead');
     expect(dialog).toHaveTextContent('unconfirmed');
@@ -45,13 +47,14 @@ describe('RerouteOffer', () => {
     // Honest wording: never "safe"/"clear"/"no risk".
     expect(dialog.textContent ?? '').not.toMatch(/\bsafe\b|\bclear\b|no risk/i);
     // Risk-aware wording: a lower-risk alternative vs. the recommended route.
-    expect(dialog).toHaveTextContent('Lower-risk alternative');
-    expect(dialog).toHaveTextContent('Keep recommended route');
+    expect(dialog).toHaveTextContent('Fastest available flood-avoiding route');
+    expect(dialog).toHaveTextContent('Back to route selection');
 
-    await user.click(screen.getByRole('button', { name: /Lower-risk alternative/ }));
+    await user.click(screen.getByRole('button', { name: /Fastest available flood-avoiding route/ }));
     expect(onReroute).toHaveBeenCalled();
-    await user.click(screen.getByRole('button', { name: /Keep recommended route/ }));
-    expect(onKeep).toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: /Back to route selection/ }));
+    expect(onReview).toHaveBeenCalledOnce();
+    expect(onKeep).not.toHaveBeenCalled();
   });
 
   it('tells the driver when an earlier alternative was missed', () => {
@@ -60,4 +63,18 @@ describe('RerouteOffer', () => {
       'Earlier alternative missed. New alternative available.',
     );
   });
+});
+
+it('shows continue-or-reroute choices only for a passable flood', async () => {
+  const keep = vi.fn();
+  const reroute = vi.fn();
+  const hazard = { id: 'passable', state: 'YELLOW' as const, atM: 500, street: 'Demo Road', passability: 'passable' as const };
+  const { rerender } = render(<RerouteOffer hazard={hazard} toHazardM={900} onReroute={reroute} onKeep={keep} onRetry={vi.fn()} status="searching" />);
+  expect(screen.getByRole('button', { name: /Continue on passable route/ })).toBeInTheDocument();
+  await userEvent.click(screen.getByRole('button', { name: /Continue on passable route/ }));
+  expect(keep).toHaveBeenCalledOnce();
+  rerender(<RerouteOffer hazard={{ ...hazard, state: 'RED', passability: 'not-passable' }} toHazardM={800} onReroute={reroute} onKeep={keep} onRetry={vi.fn()} status="unavailable" />);
+  expect(screen.queryByRole('button', { name: /Continue on passable route/ })).toBeNull();
+  expect(screen.getByRole('button', { name: /Find alternative routes/ })).toBeInTheDocument();
+  expect(screen.getByRole('alertdialog')).toHaveTextContent('Simulation keeps moving');
 });

@@ -371,3 +371,16 @@ Latest pre-push QA reported:
 BahaRoute provides informational flood-risk estimates and decision support. Conditions can change rapidly. Users should follow official advisories, road signs, barricades, and emergency instructions.
 
 BahaRoute does not guarantee that any route is safe or passable.
+
+### Driving flood voice alerts
+
+Starting a trip enables browser speech warnings for flood reports ahead within a
+900-meter geographic radius. Driver Mode includes a **Voice on · 900 m** button
+to mute or re-enable the alerts. Each hazard is announced once per trip; stopping,
+finishing, or accepting a reroute cancels pending speech. Unsupported browsers show
+**Voice unavailable**, and playback failures offer **Retry voice alerts**.
+
+Driver Mode currently uses simulated movement and demo/unconfirmed route hazards.
+The spoken warnings explicitly identify those demo reports. This feature does not
+yet monitor a driver's live GPS position or provide live flood detection. Browser
+speech requires no AI API key; no location or report data is sent to an AI service.

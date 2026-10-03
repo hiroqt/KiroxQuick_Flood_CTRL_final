@@ -5,10 +5,12 @@
 // React-free so it is unit-testable.
 
 import type { RouteManeuver } from '../data/fixtures/pitxToMoaRoute';
+import { nearbyFloods, FLOOD_ALERT_RADIUS_M } from './floodProximity';
+import type { MeasuredRoute } from './routeGeometry';
 import type { DriveHazard } from '../data/fixtures/driveHazards';
 
-/** Only warn about hazards within this distance ahead. */
-export const HAZARD_LOOKAHEAD_M = 1000;
+/** Warn inside this radius (along-route fallback when geometry is unavailable). */
+export const HAZARD_LOOKAHEAD_M = FLOOD_ALERT_RADIUS_M;
 
 export interface NavState {
   /** Next maneuver ahead (the arrival maneuver near the end). */
@@ -29,17 +31,19 @@ export function computeNavState(
   maneuvers: ReadonlyArray<RouteManeuver>,
   hazards: ReadonlyArray<DriveHazard>,
   speedMps: number,
+  route?: MeasuredRoute,
 ): NavState {
   // Skip the "depart" step; the next maneuver is the first one still ahead.
   const next = maneuvers.find((m) => m.type !== 'depart' && m.atM > traveledM) ?? null;
-  const hazard =
+  const nearby = route ? nearbyFloods(traveledM, route, hazards)[0] : undefined;
+  const hazard = route ? nearby?.hazard ?? null :
     hazards.find((h) => h.atM >= traveledM && h.atM - traveledM <= HAZARD_LOOKAHEAD_M) ?? null;
   const remainingM = Math.max(0, lengthM - traveledM);
   return {
     next,
     toNextM: next ? Math.max(0, next.atM - traveledM) : 0,
     hazard,
-    toHazardM: hazard ? hazard.atM - traveledM : 0,
+    toHazardM: nearby?.distance ?? (hazard ? hazard.atM - traveledM : 0),
     remainingM,
     remainingS: speedMps > 0 ? remainingM / speedMps : 0,
   };

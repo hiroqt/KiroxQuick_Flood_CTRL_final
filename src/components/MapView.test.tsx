@@ -10,6 +10,8 @@
 // and the DemoDataBadge shows when demo layers are present (Req 15.2).
 
 import { act } from 'react';
+import * as rerouteService from '../services/floodAvoidingReroute';
+import { SIM_SPEED_MPS, SIM_PLAYBACK_RATE, type DriveFrame } from '../simulation/DriveSimulator';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { MapView, type MapManagerLike } from './MapView';
@@ -571,7 +573,139 @@ describe('MapView — route preview (auto lines + selection + Start)', () => {
     expect(updateRoutePreviewSelection).toHaveBeenCalled();
     const calls = updateRoutePreviewSelection.mock.calls;
     const lastCall = calls[calls.length - 1];
-    expect(lastCall[1]).toBe('pitx-moa-lowrisk');
+    expect(lastCall[1]).toBe('pitx-moa-longer');
+  });
+
+  it.each([
+    ['pitx-moa-primary', -800], ['pitx-moa-lowrisk', -800], ['pitx-moa-longer', -800],
+  ] as const)('keeps route %s moving and shows alternative selection at offset %s meters', async (routeId, offset) => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    const { manager, showRoutePreview } = makeFakeManager();
+    manager.startDriveView = vi.fn();
+    manager.updateDrive = vi.fn();
+    let callback: FrameRequestCallback | undefined;
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      callback = cb;
+      return 1;
+    });
+    const request = vi.spyOn(rerouteService, 'findFloodAvoidingReroutes').mockResolvedValue([]);
+    const { unmount } = render(<MapView config={CONFIG} createMapManager={() => manager} />);
+    try {
+      await pickPitxToMoa(user);
+      await screen.findByTestId('route-compare-panel');
+      await user.click(screen.getByTestId(`route-card-${routeId}`));
+      await user.click(screen.getByTestId('start-route-button'));
+      const route = showRoutePreview.mock.calls[0][0].find((r: { id: string }) => r.id === routeId);
+      act(() => callback?.(0));
+      const { planRoutes } = await import('../services/routePlanning');
+      const { collectRouteFloods, floodHazardsOnRoute } = await import('../services/routeFloodHazards');
+      const candidates = await planRoutes(route.geometry[0], route.geometry[route.geometry.length - 1]);
+      const hazard = floodHazardsOnRoute(route.geometry, collectRouteFloods(candidates))[0];
+      expect(hazard).toBeDefined();
+      if (hazard.atM > 1200) {
+        await act(async () => callback?.((hazard.atM - 1200) / (SIM_SPEED_MPS * SIM_PLAYBACK_RATE) * 1000));
+        expect(request).toHaveBeenCalled();
+        if (routeId === 'pitx-moa-primary') expect(screen.queryByRole('alertdialog')).toBeNull();
+      }
+      await act(async () => callback?.((hazard.atM + offset) / (SIM_SPEED_MPS * SIM_PLAYBACK_RATE) * 1000));
+      expect(screen.getByRole('alertdialog')).toHaveTextContent('Demo flood —');
+      const attemptsAtAlert = request.mock.calls.length;
+      expect(attemptsAtAlert).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText(/No joinable flood-avoiding road route found/)).toBeInTheDocument();
+      const callsWhilePaused = raf.mock.calls.length;
+      expect(screen.getByRole('group', { name: 'Route options' })).toBeInTheDocument();
+      const framesBefore = vi.mocked(manager.updateDrive!).mock.calls.length;
+      act(() => callback?.((hazard.atM + offset + 100) / (SIM_SPEED_MPS * SIM_PLAYBACK_RATE) * 1000));
+      expect(vi.mocked(manager.updateDrive!).mock.calls.length).toBeGreaterThan(framesBefore);
+      await user.click(screen.getByRole('button', { name: /Find alternative routes/ }));
+      expect(raf.mock.calls.length).toBeGreaterThan(callsWhilePaused);
+      expect(request).toHaveBeenCalledTimes(attemptsAtAlert + 1);
+      await act(async () => callback?.((hazard.atM + offset + 300) / (SIM_SPEED_MPS * SIM_PLAYBACK_RATE) * 1000));
+      expect(request).toHaveBeenCalledTimes(attemptsAtAlert + 2);
+      await user.click(screen.getByRole('button', { name: /Back to route selection/ }));
+      expect(await screen.findByTestId('route-compare-panel')).toBeInTheDocument();
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(screen.getByTestId('route-card-pitx-moa-primary')).toBeInTheDocument();
+      expect(screen.getByTestId('route-card-pitx-moa-lowrisk')).toBeInTheDocument();
+      expect(screen.getByTestId('route-card-pitx-moa-longer')).toBeInTheDocument();
+      expect(showRoutePreview.mock.lastCall?.[1]).toBe(routeId);
+      expect(showRoutePreview.mock.lastCall?.[0]).toHaveLength(3);
+    } finally {
+      unmount();
+      raf.mockRestore();
+      request.mockRestore();
+    }
+  });
+
+  it.each(['pitx-moa-primary', 'pitx-moa-longer'])('shows an avoiding road for %s at 900 m while provider search is pending', async (routeId) => {
+    const user = (await import('@testing-library/user-event')).default.setup();
+    const { manager, showRoutePreview } = makeFakeManager();
+    manager.startDriveView = vi.fn();
+    manager.updateDrive = vi.fn();
+    manager.setDriveRoute = vi.fn();
+    let callback: FrameRequestCallback | undefined;
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => { callback = cb; return 1; });
+    const request = vi.spyOn(rerouteService, 'findFloodAvoidingReroutes').mockImplementation(() => new Promise(() => {}));
+    const { unmount } = render(<MapView config={CONFIG} createMapManager={() => manager} />);
+    try {
+      await pickPitxToMoa(user);
+      await screen.findByTestId('route-compare-panel');
+      await user.click(screen.getByTestId(`route-card-${routeId}`));
+      await user.click(screen.getByTestId('start-route-button'));
+      const route = showRoutePreview.mock.calls[0][0].find((r: { id: string }) => r.id === routeId);
+      const { planRoutes } = await import('../services/routePlanning');
+      const { collectRouteFloods, floodHazardsOnRoute } = await import('../services/routeFloodHazards');
+      const candidates = await planRoutes(route.geometry[0], route.geometry[route.geometry.length - 1]);
+      const floods = collectRouteFloods(candidates);
+      const hazard = floodHazardsOnRoute(route.geometry, floods).find((h) => h.passability === 'not-passable')!;
+      act(() => callback?.(0));
+      await act(async () => callback?.((hazard.atM - 1200) / (SIM_SPEED_MPS * SIM_PLAYBACK_RATE) * 1000));
+      await act(async () => callback?.((hazard.atM - 900) / (SIM_SPEED_MPS * SIM_PLAYBACK_RATE) * 1000));
+      expect(screen.getByRole('alertdialog')).toHaveTextContent('not passable');
+      await user.click(screen.getByRole('button', { name: /Fastest available flood-avoiding route/ }));
+      expect(manager.setDriveRoute).toHaveBeenCalledOnce();
+      expect(rerouteService.avoidsFloodPoints(vi.mocked(manager.setDriveRoute!).mock.calls[0][0], floods.map((f) => f.position))).toBe(true);
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+    } finally {
+      unmount(); raf.mockRestore(); request.mockRestore();
+    }
+  });
+
+  it('changes driving playback speed from the HUD without resetting progress', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    const { manager } = makeFakeManager();
+    manager.startDriveView = vi.fn();
+    manager.updateDrive = vi.fn();
+    let callback: FrameRequestCallback | undefined;
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      callback = cb;
+      return 1;
+    });
+    const { unmount } = render(<MapView config={CONFIG} createMapManager={() => manager} />);
+    try {
+      await pickPitxToMoa(user);
+      await screen.findByTestId('route-compare-panel');
+      await user.click(screen.getByTestId('start-route-button'));
+      expect(screen.getByRole('button', { name: 'Simulation speed 4×' }))
+        .toHaveAttribute('aria-pressed', 'true');
+      act(() => callback?.(0));
+      act(() => callback?.(1000));
+      let expectedM = SIM_SPEED_MPS * 4;
+      for (const [index, rate] of [2, 2.5, 3, 4].entries()) {
+        const button = screen.getByRole('button', { name: `Simulation speed ${rate}×` });
+        await user.click(button);
+        expect(button).toHaveAttribute('aria-pressed', 'true');
+        act(() => callback?.((index + 2) * 1000));
+        expectedM += SIM_SPEED_MPS * rate;
+        expect((vi.mocked(manager.updateDrive!).mock.lastCall?.[0] as DriveFrame).traveledM)
+          .toBeCloseTo(expectedM);
+      }
+    } finally {
+      unmount();
+      raf.mockRestore();
+    }
   });
 
   it('Start clears the preview and enters Driver Mode with the selected route', async () => {
