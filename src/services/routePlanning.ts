@@ -72,6 +72,13 @@ export interface RouteRiskSummary {
   readonly higherRiskSegments: number;
   /** Recent community reports resolving to barangays the route passes. */
   readonly reportCount: number;
+  /**
+   * Recent AI-discovered web-evidence items resolving to barangays the route
+   * passes. A SUPPORTING signal only: it adds context to the explanation and a
+   * mild exposure weight, but a single web/news result never hard-blocks a
+   * route (only a confirmed official closure can). Never raises `level`.
+   */
+  readonly webEvidenceCount: number;
   /** Confirmed official closures the route passes through. */
   readonly closureCount: number;
   /** Rainfall trend if available, else 'unknown'. */
@@ -104,6 +111,11 @@ export interface RoutePlanningContext {
   readonly riskByBarangay?: (psgc: string) => CurrentRiskLevel | undefined;
   /** PSGC → recent community report count. */
   readonly reportCountByBarangay?: (psgc: string) => number;
+  /**
+   * PSGC → count of ACTIVE AI web-evidence items resolving to the barangay.
+   * Supporting context only — never produces a closure or raises risk level.
+   */
+  readonly webEvidenceCountByBarangay?: (psgc: string) => number;
   /** PSGC set of confirmed closures. */
   readonly closedBarangays?: ReadonlySet<string>;
   /** Current rainfall trend (from the rainfall snapshot). */
@@ -312,6 +324,7 @@ export function summarizeRouteRisk(
   let sawClassified = false;
   let higherRiskSegments = 0;
   let reportCount = 0;
+  let webEvidenceCount = 0;
   let closureCount = 0;
 
   for (const psgc of barangays) {
@@ -327,6 +340,10 @@ export function summarizeRouteRisk(
       if (riskSeverity(bRisk) >= riskSeverity('HIGH')) higherRiskSegments += 1;
     }
     reportCount += ctx.reportCountByBarangay?.(psgc) ?? 0;
+    // Web evidence is SUPPORTING context: it is counted but never raises
+    // `level` and never flags `sawClassified` on its own (a single AI/news
+    // result must not classify or block a route).
+    webEvidenceCount += ctx.webEvidenceCountByBarangay?.(psgc) ?? 0;
   }
 
   // Demo hazards that sit on this route always contribute their mapped risk.
@@ -344,6 +361,7 @@ export function summarizeRouteRisk(
       level: 'UNKNOWN',
       higherRiskSegments: 0,
       reportCount,
+      webEvidenceCount,
       closureCount,
       trend: ctx.trend ?? 'unknown',
       dataUnavailable: true,
@@ -354,6 +372,7 @@ export function summarizeRouteRisk(
     level,
     higherRiskSegments,
     reportCount,
+    webEvidenceCount,
     closureCount,
     trend: ctx.trend ?? 'unknown',
     dataUnavailable: false,
@@ -415,15 +434,20 @@ function preferenceScore(
   const closurePenalty = r.closureCount * 1000;
   const reported = hasReportedFlooding(r) ? 1 : 0;
 
+  // Web evidence is a MILD supporting nudge only — weighted far below reports
+  // and nowhere near the closure penalty, so a single AI/news result can never
+  // dominate ranking or block a route.
+  const webNudge = r.webEvidenceCount * 0.5;
+
   if (preference === 'faster') {
     // Time-first; exposure is a lighter secondary term.
     const exposure = severity * 1.5 + r.higherRiskSegments * 1 + reported * 4;
-    return closurePenalty + timeMin + exposure;
+    return closurePenalty + timeMin + exposure + webNudge;
   }
   // lowerFloodExposure: exposure-first, time is the final tie-breaker.
   const exposure =
     reported * 40 + severity * 8 + r.higherRiskSegments * 4 + r.reportCount * 1.5;
-  return closurePenalty + exposure + timeMin * 0.25;
+  return closurePenalty + exposure + webNudge + timeMin * 0.25;
 }
 
 /**
@@ -547,6 +571,12 @@ function buildReasons(
         text: `${risk.reportCount} recent community report${risk.reportCount === 1 ? '' : 's'} (unconfirmed)`,
       });
     }
+    if (risk.webEvidenceCount > 0) {
+      out.push({
+        key: 'webEvidence',
+        text: 'Recent flood evidence was found near one route segment (web, unofficial)',
+      });
+    }
   }
   return out;
 }
@@ -583,6 +613,11 @@ export function routeSegmentExplanation(risk: RouteRiskSummary): string {
   if (risk.reportCount > 0) {
     parts.push(
       `${risk.reportCount} recent community report${risk.reportCount === 1 ? '' : 's'} (unconfirmed)`,
+    );
+  }
+  if (risk.webEvidenceCount > 0) {
+    parts.push(
+      `recent flood evidence found near ${risk.webEvidenceCount === 1 ? 'one route segment' : `${risk.webEvidenceCount} route segments`} (web, unofficial)`,
     );
   }
   if (parts.length === 0) {

@@ -3625,3 +3625,527 @@ body,
   font-size: 13px;
   color: var(--baharoute-text-muted, #6f6a62);
 }
+
+/* --- Historical Flood Evidence (DEMO / RESEARCH USE ONLY) ----------------- */
+
+/* Historical design tokens — a muted violet "archive" language, deliberately
+   distinct from current-risk reds/oranges and the community-report blues. */
+:root {
+  --baharoute-hist-violet: #5c6bc0;
+  --baharoute-hist-ink: #3f2b96;
+  --baharoute-hist-ink-soft: #5a4fa0;
+  --baharoute-hist-tint: #f5f3fe;
+  --baharoute-hist-tint-2: #ece9fb;
+  --baharoute-hist-border: #d7cff2;
+}
+
+.baharoute-historical-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--baharoute-hist-ink);
+  background: var(--baharoute-hist-tint-2);
+  border: 1px solid var(--baharoute-hist-border);
+  border-radius: 999px;
+  vertical-align: middle;
+}
+
+/* --- Mode switcher (Route / Community / Historical) ----------------------- */
+.baharoute-mode-switcher-host {
+  position: absolute;
+  top: calc(var(--baharoute-control-inset) + var(--baharoute-safe-top));
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 7;
+  pointer-events: none;
+}
+.baharoute-mode-switcher {
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--baharoute-surface, #fff);
+  border: 1px solid var(--baharoute-border, #e2ded7);
+  border-radius: 999px;
+  box-shadow: var(--baharoute-shadow, 0 6px 24px rgba(0, 0, 0, 0.18));
+  pointer-events: auto;
+}
+.baharoute-mode-switcher__option {
+  min-height: 32px;
+  padding: 0 16px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--baharoute-text-muted, #6f6a62);
+  background: transparent;
+  border: none;
+  border-radius: 999px;
+  cursor: pointer;
+  transition:
+    background 120ms ease,
+    color 120ms ease;
+}
+.baharoute-mode-switcher__option:hover {
+  color: var(--baharoute-text, #2b2b2b);
+}
+.baharoute-mode-switcher__option[data-active='true'] {
+  color: #fff;
+  background: var(--baharoute-accent, #0f6fde);
+}
+/* Historical gets the violet accent so the active state reinforces the
+   historical/current distinction. */
+.baharoute-mode-switcher__option[data-testid='map-mode-historical'][data-active='true'] {
+  background: var(--baharoute-hist-violet);
+}
+
+/* --- Historical toggle button (control cluster) -------------------------- */
+.baharoute-historical-toggle {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--baharoute-hist-violet);
+}
+.baharoute-historical-toggle[aria-pressed='true'] {
+  box-shadow: inset 0 0 0 2px currentColor;
+}
+
+/* --- Historical evidence panel host -------------------------------------- */
+/* Mobile-first: full-width bottom sheet (matches trip/explore/insights hosts).
+   Desktop promotes it to the left rail below. box-sizing + right:0 keep it from
+   ever overflowing the viewport edge (the clipping bug). */
+.baharoute-historical-host {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 6;
+  max-height: 72vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+/* Desktop/tablet: dock to the left rail using the shared panel-top offset so it
+   clears the brand chip + mode switcher and never clips off the left edge. */
+@media (min-width: 768px) {
+  .baharoute-historical-host {
+    left: calc(var(--baharoute-control-inset) + var(--baharoute-safe-left));
+    right: auto;
+    top: var(--baharoute-panel-top);
+    bottom: auto;
+    width: 340px;
+    /* Never wider than the available viewport, so the panel can never clip off
+       the left/right edge regardless of width tokens. */
+    max-width: calc(100vw - 2 * var(--baharoute-control-inset) - var(--baharoute-safe-left));
+    max-height: calc(100vh - var(--baharoute-panel-top) - var(--baharoute-panel-bottom-gap));
+    max-height: calc(100dvh - var(--baharoute-panel-top) - var(--baharoute-panel-bottom-gap));
+  }
+}
+@media (min-width: 1024px) {
+  .baharoute-historical-host {
+    width: 360px;
+  }
+}
+.baharoute-hist-evidence {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px;
+  background: var(--baharoute-surface, #fff);
+  border-radius: var(--baharoute-radius, 12px);
+  border-top: 3px solid var(--baharoute-hist-violet);
+  box-shadow: var(--baharoute-shadow, 0 6px 24px rgba(0, 0, 0, 0.18));
+}
+.baharoute-hist-evidence__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+}
+.baharoute-hist-evidence__heading {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+.baharoute-hist-evidence__title {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.baharoute-hist-evidence__close {
+  flex: none;
+}
+.baharoute-hist-evidence__sub {
+  margin: -4px 0 0;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--baharoute-hist-ink-soft);
+}
+
+/* AI agent workflow card. */
+.baharoute-hist-agent {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  background: var(--baharoute-hist-tint);
+  border: 1px solid var(--baharoute-hist-border);
+  border-radius: 10px;
+}
+.baharoute-hist-agent__lead {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.45;
+  color: #4a4a52;
+}
+.baharoute-hist-agent__spark {
+  color: var(--baharoute-hist-violet);
+  font-weight: 700;
+  margin-right: 4px;
+}
+.baharoute-hist-agent__pipeline {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 2px;
+}
+.baharoute-hist-agent__pipe-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--baharoute-hist-ink);
+}
+.baharoute-hist-agent__pipe-step:not(:last-child)::after {
+  content: '→';
+  margin-left: 4px;
+  color: var(--baharoute-hist-violet);
+  opacity: 0.6;
+}
+.baharoute-hist-agent__pipe-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  font-size: 9px;
+  font-weight: 800;
+  color: #fff;
+  background: var(--baharoute-hist-violet);
+  border-radius: 999px;
+}
+.baharoute-hist-agent__run {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 40px;
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #fff;
+  background: var(--baharoute-hist-violet);
+  border: none;
+  border-radius: 9px;
+  cursor: pointer;
+  box-shadow: 0 2px 8px rgba(92, 107, 192, 0.35);
+}
+.baharoute-hist-agent__run:hover {
+  background: #4f5bb0;
+}
+.baharoute-hist-agent__run-icon {
+  font-size: 11px;
+}
+.baharoute-hist-agent__flow {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background: var(--baharoute-surface, #fff);
+  border: 1px solid var(--baharoute-hist-border);
+  border-radius: 8px;
+}
+.baharoute-hist-agent__flow-step {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding-left: 10px;
+  border-left: 2px solid var(--baharoute-hist-border);
+}
+.baharoute-hist-agent__flow-title {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--baharoute-hist-ink);
+}
+.baharoute-hist-agent__flow-result {
+  font-size: 11px;
+  color: #4a7a4a;
+}
+.baharoute-hist-agent__flow-check {
+  font-weight: 800;
+  margin-right: 4px;
+}
+
+/* Filters — 2×2 grid. */
+.baharoute-hist-filters {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.baharoute-hist-filters__field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.baharoute-hist-filters__label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--baharoute-text-muted, #6f6a62);
+}
+.baharoute-hist-filters select {
+  font: inherit;
+  font-size: 12px;
+  padding: 7px 8px;
+  border: 1px solid var(--baharoute-border, #e2ded7);
+  border-radius: 8px;
+  background: var(--baharoute-surface, #fff);
+}
+.baharoute-hist-filters select:focus-visible {
+  outline: 2px solid var(--baharoute-hist-violet);
+  outline-offset: 1px;
+}
+
+/* Count. */
+.baharoute-hist-evidence__count {
+  margin: 0;
+  font-size: 12px;
+  color: var(--baharoute-text-muted, #6f6a62);
+}
+.baharoute-hist-evidence__count strong {
+  color: var(--baharoute-hist-ink);
+}
+
+/* Evidence cards. */
+.baharoute-hist-evidence__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.baharoute-hist-card {
+  width: 100%;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--baharoute-border, #e2ded7);
+  border-left: 4px solid var(--baharoute-hist-violet);
+  border-radius: 10px;
+  background: var(--baharoute-surface, #fff);
+  cursor: pointer;
+  transition:
+    border-color 120ms ease,
+    box-shadow 120ms ease,
+    transform 120ms ease;
+}
+.baharoute-hist-card:hover {
+  border-color: var(--baharoute-hist-border);
+  box-shadow: 0 2px 10px rgba(92, 107, 192, 0.18);
+  transform: translateY(-1px);
+}
+.baharoute-hist-card__top {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+}
+.baharoute-hist-card__title {
+  font-size: 13.5px;
+  font-weight: 700;
+  line-height: 1.25;
+  color: var(--baharoute-text, #2b2b2b);
+}
+.baharoute-hist-card__year {
+  flex: none;
+  font-size: 12px;
+  font-weight: 800;
+  color: var(--baharoute-hist-violet);
+}
+.baharoute-hist-card__city {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--baharoute-text-muted, #6f6a62);
+}
+.baharoute-hist-card__event {
+  font-size: 11px;
+  color: #8a8580;
+}
+.baharoute-hist-card__pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin-top: 2px;
+}
+
+/* Status pills — muted, never a current-severity red. */
+.baharoute-hist-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+.baharoute-hist-pill--precision[data-tone='strong'] {
+  color: var(--baharoute-hist-ink);
+  background: var(--baharoute-hist-tint-2);
+  border-color: var(--baharoute-hist-border);
+}
+.baharoute-hist-pill--precision[data-tone='soft'] {
+  color: #6b6480;
+  background: #f1eff8;
+  border-color: #e3def2;
+}
+.baharoute-hist-pill--precision[data-tone='faint'] {
+  color: #8a8580;
+  background: #f3f1ee;
+  border-color: #e4e0d9;
+}
+.baharoute-hist-pill--pass[data-tone='block'] {
+  color: #7a4a4a;
+  background: #f6ecec;
+  border-color: #ecd9d9;
+}
+.baharoute-hist-pill--pass[data-tone='ok'] {
+  color: #3f6b4a;
+  background: #e9f3ec;
+  border-color: #d6e8db;
+}
+.baharoute-hist-pill--pass[data-tone='unknown'] {
+  color: #70707a;
+  background: #f0f0f3;
+  border-color: #e2e2e8;
+}
+.baharoute-hist-pill--status {
+  color: var(--baharoute-hist-ink-soft);
+  background: var(--baharoute-hist-tint);
+  border-color: var(--baharoute-hist-border);
+}
+.baharoute-hist-pill--unmapped {
+  color: #8a8580;
+  background: transparent;
+  border-color: var(--baharoute-border, #e2ded7);
+  font-weight: 600;
+}
+
+/* --- Historical evidence popup ------------------------------------------- */
+.baharoute-historical-popup {
+  border-top: 3px solid var(--baharoute-hist-violet);
+  padding-top: 10px;
+}
+.baharoute-historical-popup__eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0 0 6px;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: var(--baharoute-hist-ink-soft);
+}
+.baharoute-historical-popup__eyebrow-text {
+  color: var(--baharoute-text-muted, #6f6a62);
+}
+.baharoute-historical-popup__headline {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+.baharoute-historical-popup__context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 8px;
+  margin: 4px 0 0;
+}
+.baharoute-historical-popup__city {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--baharoute-text-muted, #6f6a62);
+}
+.baharoute-historical-popup__event {
+  font-size: 12px;
+  color: #8a8580;
+}
+.baharoute-historical-popup__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 10px 0 2px;
+}
+.baharoute-historical-popup__chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--baharoute-hist-ink);
+  background: var(--baharoute-hist-tint-2);
+  border: 1px solid var(--baharoute-hist-border);
+  border-radius: 999px;
+}
+.baharoute-historical-popup__fields {
+  margin-top: 10px;
+}
+.baharoute-historical-popup__nourl {
+  color: #8a8580;
+  font-style: italic;
+}
+.baharoute-historical-popup__record {
+  margin: 12px 0 0;
+  padding: 10px 12px;
+  background: var(--baharoute-hist-tint);
+  border: 1px solid var(--baharoute-hist-border);
+  border-radius: 8px;
+}
+.baharoute-historical-popup__record-title {
+  margin: 0;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  color: var(--baharoute-hist-ink);
+}
+.baharoute-historical-popup__record-sub {
+  margin: 3px 0 0;
+  font-size: 12px;
+  color: var(--baharoute-hist-ink-soft);
+}
+
+/* Historical UI — mobile layout. The panel is a bottom sheet (base rule) and
+   the mode switcher stays compact so it never overlaps the top controls. */
+@media (max-width: 767px) {
+  .baharoute-mode-switcher__option {
+    padding: 0 12px;
+    font-size: 12px;
+  }
+  .baharoute-hist-evidence {
+    border-radius: 16px 16px 0 0;
+    border-top-width: 4px;
+    padding: 14px 16px calc(16px + var(--baharoute-safe-bottom, 0px));
+  }
+}

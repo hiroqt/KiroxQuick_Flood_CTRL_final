@@ -22,6 +22,16 @@ import { HistoricalTab } from './HistoricalTab';
 /** Which tab is active. */
 export type InsightsTab = 'current' | 'historical';
 
+/** A compact AI web-evidence summary for the selected barangay. */
+export interface BarangayWebEvidenceSummary {
+  /** Count of ACTIVE web-evidence items resolving to this barangay. */
+  readonly count: number;
+  /** Strongest confidence label among them, or null when none. */
+  readonly strongestConfidence: 'UNVERIFIED' | 'CORROBORATED' | 'OFFICIAL' | null;
+  /** True when the discovery agent is currently unavailable. */
+  readonly agentUnavailable: boolean;
+}
+
 /** Mobile bottom-sheet height state. */
 export type SheetState = 'collapsed' | 'half' | 'full';
 
@@ -35,6 +45,11 @@ export interface FloodInsightsProps {
   onTabChange: (tab: InsightsTab) => void;
   /** Current-conditions props (from BarangayRiskController.infoFor), or null. */
   current: BarangayInfoPanelProps | null;
+  /**
+   * Optional AI web-evidence summary for this barangay (presentation-only; from
+   * the evidence store, kept SEPARATE from current risk — never merged into it).
+   */
+  webEvidence?: BarangayWebEvidenceSummary | null;
   /** Static historical record for this barangay, or null when uncovered. */
   historical: BarangayHistoricalRisk | null;
   /** Timeline step for the Current tab. */
@@ -54,6 +69,7 @@ export function FloodInsights({
   tab,
   onTabChange,
   current,
+  webEvidence,
   historical,
   timelineStep,
   onTimelineStep,
@@ -183,7 +199,11 @@ export function FloodInsights({
         <div role="tabpanel" id={currentPanelId} aria-labelledby={currentTabId}>
           <TimelineControl step={timelineStep} onStepChange={onTimelineStep} />
           {current ? (
-            <CurrentTab info={current} historicalClass={historicalClass} />
+            <CurrentTab
+              info={current}
+              historicalClass={historicalClass}
+              webEvidence={webEvidence ?? null}
+            />
           ) : (
             <p className="baharoute-insights__empty" data-testid="current-none">
               Current flood information is temporarily unavailable. Historical

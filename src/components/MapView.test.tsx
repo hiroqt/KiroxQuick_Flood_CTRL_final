@@ -17,7 +17,7 @@ import type { AppConfig } from '../types/config';
 import type { MinimalMap } from '../map/MapManager';
 import type { LocationResult } from '../services/geolocation';
 
-const CONFIG: AppConfig = { tileKey: 'test-key-123', hasTileKey: true };
+const CONFIG: AppConfig = { tileKey: 'test-key-123', hasTileKey: true, demoMode: false };
 
 /**
  * A fake MapManager tracking init/destroy calls and the options it received. It
