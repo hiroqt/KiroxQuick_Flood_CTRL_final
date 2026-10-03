@@ -71,7 +71,7 @@ export function NcrScene({ assembling, onComplete }: Props) {
         group.add(
           new THREE.Line(
             new THREE.BufferGeometry().setFromPoints(points),
-            new THREE.LineBasicMaterial({ color: '#f5f5e9' }),
+            new THREE.LineBasicMaterial({ color: '#f2f7fe' }),
           ),
         );
       }
@@ -80,7 +80,7 @@ export function NcrScene({ assembling, onComplete }: Props) {
         const height = 0.12 + ((index * 7 + b * 3) % 5) * 0.055;
         const building = new THREE.Mesh(
           new THREE.BoxGeometry(0.065, 0.09, height),
-          new THREE.MeshStandardMaterial({ color: '#eeeee2', roughness: 1 }),
+          new THREE.MeshStandardMaterial({ color: '#e4edfa', roughness: 1 }),
         );
         building.position.set(
           ((b % 3) - 1) * 0.13,
@@ -113,15 +113,15 @@ export function NcrScene({ assembling, onComplete }: Props) {
     );
     const route = new THREE.Mesh(
       new THREE.TubeGeometry(curve, 64, 0.025, 6, false),
-      new THREE.MeshBasicMaterial({ color: '#e96c3b' }),
+      new THREE.MeshBasicMaterial({ color: '#1a73e8' }),
     );
     world.add(route);
     const traveler = new THREE.Mesh(
       new THREE.SphereGeometry(0.07, 12, 8),
-      new THREE.MeshBasicMaterial({ color: '#213e33' }),
+      new THREE.MeshBasicMaterial({ color: '#0a1f3c' }),
     );
     world.add(traveler);
-    const grid = new THREE.GridHelper(22, 35, '#c7cdbd', '#d9decf');
+    const grid = new THREE.GridHelper(22, 35, '#b9c9e2', '#cfdcef');
     grid.rotation.x = Math.PI / 2;
     grid.position.z = -0.12;
     world.add(grid);
@@ -229,7 +229,7 @@ export function NcrScene({ assembling, onComplete }: Props) {
                     .map((ring) => `M${ring.map(([x, y]) => `${x},${y}`).join('L')}Z`)
                     .join('')}
                   fill={city.color}
-                  stroke="#f5f5e9"
+                  stroke="#f2f7fe"
                   strokeWidth="0.025"
                   fillRule="evenodd"
                 />

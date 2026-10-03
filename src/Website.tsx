@@ -19,10 +19,10 @@ export function Website() {
       <Suspense
         fallback={
           <div
-            className="flex h-dvh items-center justify-center bg-[#f5f4ed] text-[#243d33]"
+            className="flex h-dvh items-center justify-center bg-[#eef4fc] text-[#0f2d52]"
             role="status"
           >
-            Opening BahaRoute…
+            Opening Flood-CTRL…
           </div>
         }
       >

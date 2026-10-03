@@ -16,9 +16,9 @@ function makeFakeManager() {
 }
 
 describe('App shell', () => {
-  it('renders the BahaRoute heading', () => {
+  it('renders the Flood-CTRL brand heading', () => {
     render(<App config={KEY_PRESENT} mapViewProps={{ createMapManager: () => makeFakeManager().manager }} />);
-    expect(screen.getByRole('heading', { name: /baharoute/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /flood-ctrl/i })).toBeInTheDocument();
   });
 
   it('renders the ConfigIncomplete overlay and does NOT mount the map when the tile key is absent', () => {
@@ -27,7 +27,7 @@ describe('App shell', () => {
     render(<App config={KEY_ABSENT} mapViewProps={{ createMapManager: () => makeFakeManager().manager }} />);
 
     // Heading still renders.
-    expect(screen.getByRole('heading', { name: /baharoute/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /flood-ctrl/i })).toBeInTheDocument();
     // Config-incomplete is now rendered via the ConfigIncomplete overlay
     // component (role="alert" + its testid), not an inline message.
     const configIncomplete = screen.getByTestId('config-incomplete');
