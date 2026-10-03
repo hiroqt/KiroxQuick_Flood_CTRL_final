@@ -36,8 +36,8 @@ import {
 } from './layers/dataLayers';
 import type { FloodSusceptibility } from './types/flood';
 
-const KEY_PRESENT: AppConfig = { tileKey: 'test-key-123', hasTileKey: true };
-const KEY_ABSENT: AppConfig = { hasTileKey: false };
+const KEY_PRESENT: AppConfig = { tileKey: 'test-key-123', hasTileKey: true, demoMode: false };
+const KEY_ABSENT: AppConfig = { hasTileKey: false, demoMode: false };
 
 /**
  * A fake MapManager that records init/destroy and exposes the callbacks passed

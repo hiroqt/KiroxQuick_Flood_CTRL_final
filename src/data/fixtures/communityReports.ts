@@ -1,6 +1,6 @@
 ﻿// src/data/fixtures/communityReports.ts
 //
-// âš ï¸ DEMO / FIXTURE DATA â€” NOT AUTHORITATIVE, NOT REAL OBSERVATIONS âš ï¸
+// DEMO / FIXTURE DATA -- NOT AUTHORITATIVE, NOT REAL OBSERVATIONS
 // Synthetic community (non-authoritative) flood reports for development/demo
 // only. These are INVENTED demo points, not real community submissions, and are
 // always marked UNCONFIRMED (Req 14.3, 14.4, 15.1, 15.2, 15.4). Location text is

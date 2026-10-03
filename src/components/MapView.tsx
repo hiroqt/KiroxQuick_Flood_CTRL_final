@@ -49,6 +49,7 @@ import { ZoomControls } from './controls/ZoomControls';
 import { RecenterControl } from './controls/RecenterControl';
 import { ViewModeControl } from './controls/ViewModeControl';
 import { MapContextControl } from './controls/MapContextControl';
+import { MapModeSwitcher, type MapMode } from './controls/MapModeSwitcher';
 import { RotateControl } from './controls/RotateControl';
 import { DriveSimulator } from '../simulation/DriveSimulator';
 import { SIM_SPEED_MPS } from '../simulation/DriveSimulator';
@@ -185,6 +186,31 @@ import {
 import type { CommunityReport } from '../types/report';
 import { resolveBarangayForPoint } from '../services/reportResolution';
 import { barangayInfoByPsgc } from '../data/geojson/ncrBarangays';
+import {
+  installAiFloodEvidence,
+  installAiFloodEvidencePopups,
+  updateAiFloodEvidenceSource,
+  type EvidencePopupMap,
+} from '../layers/aiFloodEvidenceLayer';
+import { EvidencePopup, type EvidencePopupProps } from './overlays/EvidencePopup';
+import { GdeltService } from '../services/gdeltService';
+import { buildEvidenceFromArticles, evidenceByBarangay } from '../services/floodEvidenceAgent';
+import { FloodEvidenceStore, activeEvidenceCountFor } from '../services/floodEvidenceStore';
+import { loadConfig } from '../services/env';
+import {
+  HistoricalEvidencePopup,
+  type HistoricalEvidencePopupProps,
+} from './overlays/HistoricalEvidencePopup';
+import {
+  installHistoricalEvidence,
+  setHistoricalEvidenceVisibility,
+  updateHistoricalEvidenceSource,
+  reregisterHistoricalEvidenceImage,
+  type HistoricalLayerMapAdapter,
+  type HistoricalSourceUpdateMap,
+} from '../layers/historicalEvidenceLayer';
+import { HistoricalEvidencePanel } from './insights/HistoricalEvidencePanel';
+import { historicalFloodEvidence } from '../data/historical/historicalFloodEvidence';
 import {
   FloodInsights,
   type InsightsTab,
@@ -539,8 +565,16 @@ export function MapView({
   const uninstallReportPopupRef = useRef<(() => void) | null>(null);
   /** Teardown for the community-marker image re-registration (style reload). */
   const uninstallMarkerImageReloadRef = useRef<(() => void) | null>(null);
+  /** Teardown for the historical-evidence image re-registration (style reload). */
+  const uninstallHistoricalImageReloadRef = useRef<(() => void) | null>(null);
   /** Teardown for the AI evidence marker popup. */
   const uninstallEvidencePopupRef = useRef<(() => void) | null>(null);
+  /** The AI Flood Evidence store (live + demo-when-enabled separation). */
+  const evidenceStoreRef = useRef<FloodEvidenceStore | null>(null);
+  /** The GDELT discovery service (resilient, never throws). */
+  const gdeltServiceRef = useRef<GdeltService | null>(null);
+  /** Poll timer for the GDELT discovery cycle. */
+  const evidencePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   /** Owns the live barangay current-risk pipeline (rainfall â†’ risk â†’ paint). */
   const riskControllerRef = useRef<BarangayRiskController | null>(null);
   const unsubscribeRiskStatusRef = useRef<(() => void) | null>(null);
@@ -589,6 +623,8 @@ export function MapView({
     | { kind: 'flood'; props: FloodPopupProps; lngLat: LngLatLike }
     | { kind: 'barangay'; psgc: string; lngLat?: LngLatLike }
     | { kind: 'report'; props: ReportPopupProps; lngLat: LngLatLike }
+    | { kind: 'evidence'; props: EvidencePopupProps; lngLat: LngLatLike }
+    | { kind: 'historical'; props: HistoricalEvidencePopupProps; lngLat?: LngLatLike }
     | null
   >(null);
   /** Live rainfall/risk status for the compact status pill. */
@@ -777,6 +813,10 @@ export function MapView({
         uninstallMarkerImageReloadRef.current();
         uninstallMarkerImageReloadRef.current = null;
       }
+      if (uninstallHistoricalImageReloadRef.current) {
+        uninstallHistoricalImageReloadRef.current();
+        uninstallHistoricalImageReloadRef.current = null;
+      }
       if (uninstallEvidencePopupRef.current) {
         uninstallEvidencePopupRef.current();
         uninstallEvidencePopupRef.current = null;
@@ -821,6 +861,12 @@ export function MapView({
         riskControllerRef.current.stop();
         riskControllerRef.current = null;
       }
+      if (evidencePollRef.current) {
+        clearInterval(evidencePollRef.current);
+        evidencePollRef.current = null;
+      }
+      evidenceStoreRef.current = null;
+      gdeltServiceRef.current = null;
       markerManagerRef.current?.destroy();
       markerManagerRef.current = null;
       cameraMarkerManagerRef.current?.destroy();
@@ -1368,6 +1414,33 @@ export function MapView({
         } catch {
           // Evidence agent is best-effort; the map stays fully usable without it.
         }
+
+        // HISTORICAL Flood Evidence overlay (DEMO / RESEARCH USE ONLY, NOT
+        // CURRENT CONDITIONS). Its own try so a failure never affects the map.
+        // Installed hidden; the panel toggles it. Context only — it never
+        // participates in current-risk, closures, or routing.
+        try {
+          installHistoricalEvidence(
+            map as unknown as HistoricalLayerMapAdapter,
+            historicalFloodEvidence,
+          );
+          const styledHist = map as unknown as {
+            on?: (t: string, l: () => void) => void;
+            off?: (t: string, l: () => void) => void;
+          };
+          const onHistStyle = (): void => {
+            try {
+              reregisterHistoricalEvidenceImage(map as unknown as HistoricalLayerMapAdapter);
+            } catch {
+              // Best-effort re-register on style reload.
+            }
+          };
+          styledHist.on?.('styledata', onHistStyle);
+          uninstallHistoricalImageReloadRef.current = () =>
+            styledHist.off?.('styledata', onHistStyle);
+        } catch {
+          // Historical overlay is best-effort context; never blocks the map.
+        }
       } catch {
         // Barangay integration is best-effort; the rest of the map stays usable.
       }
@@ -1504,6 +1577,28 @@ export function MapView({
   const [reportPickActive, setReportPickActive] = useState(false);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
   const reportPickActiveRef = useRef(false);
+  /**
+   * HISTORICAL Flood Evidence panel open state (DEMO / RESEARCH USE ONLY). When
+   * open, the historical overlay is shown; closing hides it again. Historical
+   * evidence is context only and never affects current risk/closures/routing.
+   */
+  const [showHistoricalEvidence, setShowHistoricalEvidence] = useState(false);
+  /**
+   * The ACTIVE map interaction mode, surfaced by the segmented MapModeSwitcher.
+   * Exactly one of Route / Community / Historical is active at a time so the
+   * three surfaces never crowd the screen together. This is a presentation
+   * coordinator ONLY — it reuses the existing report + historical states and
+   * never changes flood semantics (Historical stays demo/research context).
+   */
+  const [mapMode, setMapMode] = useState<MapMode>('route');
+  /**
+   * True once the user has RUN the Historical Flood Evidence Agent in the
+   * panel. The historical markers stay OFF the map until this is true, so the
+   * on-map reveal reads as the agent's OUTPUT (research → map) rather than
+   * appearing just because the panel opened. Reset whenever Historical mode is
+   * left, so re-entering requires running the agent again.
+   */
+  const [historicalAgentRan, setHistoricalAgentRan] = useState(false);
   /**
    * The map point the user tapped in report mode, awaiting the report FORM
    * (Community Report V2). Null when no report is being composed. When set, the
@@ -1660,10 +1755,19 @@ export function MapView({
   const routePlanningContext = () => {
     const controller = riskControllerRef.current;
     const status = controller?.status();
+    // AI web evidence resolved to barangays (ACTIVE items only). Supporting
+    // context for the route explanation/ranking — never a hard block (only a
+    // confirmed official closure can block). Degrades to 0 when unavailable.
+    const store = evidenceStoreRef.current;
+    const webEvidenceByBarangay = store ? evidenceByBarangay(store.evidence()) : null;
     return {
       riskByBarangay: controller ? (psgc: string) => controller.riskFor(psgc) : undefined,
       reportCountByBarangay: controller
         ? (psgc: string) => controller.reportCountFor(psgc)
+        : undefined,
+      webEvidenceCountByBarangay: webEvidenceByBarangay
+        ? (psgc: string) =>
+            activeEvidenceCountFor(webEvidenceByBarangay.get(psgc) ?? [], psgc)
         : undefined,
       closedBarangays: controller?.closedBarangays(),
       trend: controller?.overallTrend(),
@@ -1886,7 +1990,13 @@ export function MapView({
     const next = !reportPickActive;
     setReportPickActive(next);
     reportPickActiveRef.current = next;
+    // Keep the segmented mode switcher in sync: entering report mode is
+    // "Community" mode; leaving it returns to "Route". Historical is never
+    // shown while reporting (exclusive surfaces).
     if (next) {
+      setMapMode('community');
+      setShowHistoricalEvidence(false);
+      setHistoricalAgentRan(false);
       // Cancel any trip-endpoint pick so the two modes never both consume a tap.
       setPickTarget(null);
       pickTargetRef.current = null;
@@ -1898,6 +2008,51 @@ export function MapView({
       setPopup(null);
       setPendingReportPoint(null);
       setConditionsEditId(null);
+    } else {
+      setMapMode('route');
+    }
+  };
+
+  /**
+   * Coordinates the ACTIVE map mode (Route / Community / Historical) so the
+   * three surfaces are mutually exclusive. Switching modes cancels the others'
+   * transient state (report-pick, compose form, historical overlay) so no two
+   * can crowd the screen at once. Presentation only — never changes flood
+   * semantics; Historical remains demo/research context.
+   */
+  const handleMapModeChange = (next: MapMode): void => {
+    if (next === mapMode) return;
+    setMapMode(next);
+
+    // Leaving Community: ensure report-pick + compose state are cleared.
+    if (next !== 'community') {
+      if (reportPickActive) {
+        setReportPickActive(false);
+        reportPickActiveRef.current = false;
+      }
+      setPendingReportPoint(null);
+      setConditionsEditId(null);
+    }
+    // Leaving Historical: hide the evidence panel + overlay, and reset the
+    // "agent ran" flag so re-entering requires running the agent again.
+    if (next !== 'historical') {
+      setShowHistoricalEvidence(false);
+      setHistoricalAgentRan(false);
+    }
+
+    if (next === 'community') {
+      // Enter report mode exactly as the report button does.
+      setShowHistoricalEvidence(false);
+      setReportPickActive(true);
+      reportPickActiveRef.current = true;
+      setPickTarget(null);
+      pickTargetRef.current = null;
+      setTripNotice(null);
+      setPopup(null);
+      setPendingReportPoint(null);
+      setConditionsEditId(null);
+    } else if (next === 'historical') {
+      setShowHistoricalEvidence(true);
     }
   };
 
@@ -2325,6 +2480,19 @@ export function MapView({
   // Stop the animation loop if the map unmounts mid-drive.
   useEffect(() => () => simulatorRef.current?.stop(), []);
 
+  // Show/hide the HISTORICAL evidence overlay. Context only — this toggles ONLY
+  // the historical layer and never current risk/closures. Markers appear only
+  // once the panel is open AND the agent has been run (research → map reveal),
+  // so an empty map before "Run" makes the web-research step legible.
+  useEffect(() => {
+    const liveMap = managerRef.current?.getMap?.() ?? null;
+    if (!liveMap) return;
+    setHistoricalEvidenceVisibility(
+      liveMap as unknown as { setLayoutProperty?: (id: string, n: string, v: unknown) => unknown; getLayer?: (id: string) => unknown },
+      showHistoricalEvidence && historicalAgentRan,
+    );
+  }, [showHistoricalEvidence, historicalAgentRan]);
+
   const handleLayerToggle = (id: LayerId, visible: boolean): void => {
     const registry = registryRef.current;
     const map = managerRef.current?.getMap?.() ?? null;
@@ -2424,6 +2592,30 @@ export function MapView({
       : null;
   // `riskRevision` is intentionally read so the panel re-derives on repaint.
   void riskRevision;
+  // AI web-evidence summary for the selected barangay (presentation-only; kept
+  // SEPARATE from current risk — it never changes the risk class). Derived from
+  // the evidence store at render time so it tracks the latest discovery cycle.
+  const barangayWebEvidence = ((): BarangayWebEvidenceSummary | null => {
+    if (popup?.kind !== 'barangay') return null;
+    const store = evidenceStoreRef.current;
+    if (!store) return null;
+    const snap = store.snapshot();
+    const here = snap.evidence.filter(
+      (e) => e.psgc === popup.psgc && e.status === 'ACTIVE',
+    );
+    const rank: Record<string, number> = { UNVERIFIED: 0, CORROBORATED: 1, OFFICIAL: 2 };
+    let strongest: 'UNVERIFIED' | 'CORROBORATED' | 'OFFICIAL' | null = null;
+    for (const e of here) {
+      if (strongest === null || rank[e.confidence] > rank[strongest]) {
+        strongest = e.confidence;
+      }
+    }
+    return {
+      count: here.length,
+      strongestConfidence: strongest,
+      agentUnavailable: snap.agentUnavailable,
+    };
+  })();
 
   /** Timeline changes update the open panel + map coloring for the step. */
   const handleTimelineStep = (step: TimelineStep): void => {
@@ -2677,8 +2869,23 @@ export function MapView({
           <div className="baharoute-control-card baharoute-control-card--rotate"><RotateControl bearing={bearing} onRotate={handleRotateBy} onResetNorth={handleResetNorth} /></div>
           <div className="baharoute-control-card baharoute-control-card--single"><LocationControl onActivate={handleLocationArrow} /></div>
           <div className="baharoute-control-card baharoute-control-card--single">
-            <button type="button" className="baharoute-report-flood baharoute-focus-ring" aria-pressed={reportPickActive} title="Report flooding (adds an unverified community report)" aria-label="Report flooding â€” adds an unverified community report at a point you tap" onClick={handleReportFloodingToggle}>
-              <span aria-hidden="true">âš </span>
+            <button type="button" className="baharoute-report-flood baharoute-focus-ring" aria-pressed={reportPickActive} title="Report flooding (adds an unverified community report)" aria-label="Report flooding - adds an unverified community report at a point you tap" onClick={handleReportFloodingToggle}>
+              <span aria-hidden="true">!</span>
+            </button>
+          </div>
+          <div className="baharoute-control-card baharoute-control-card--single">
+            <button
+              type="button"
+              className="baharoute-historical-toggle baharoute-focus-ring"
+              aria-pressed={showHistoricalEvidence}
+              title="Historical Flood Evidence (demo / research use only — not current conditions)"
+              aria-label="Historical Flood Evidence — demo research records, not current conditions"
+              data-testid="historical-evidence-toggle"
+              onClick={() =>
+                handleMapModeChange(mapMode === 'historical' ? 'route' : 'historical')
+              }
+            >
+              <span aria-hidden="true">H</span>
             </button>
           </div>
           <CamButton
@@ -2797,12 +3004,21 @@ export function MapView({
         </div>
       )}
 
+      {/* Segmented mode switcher (Route / Community / Historical). Keeps the
+          three interaction surfaces mutually exclusive so they never crowd the
+          screen together. Hidden while driving/error. */}
+      {phase !== 'error' && !driving && (
+        <div className="baharoute-mode-switcher-host" data-testid="mode-switcher-host">
+          <MapModeSwitcher value={mapMode} onChange={handleMapModeChange} />
+        </div>
+      )}
+
       {/* Trip flow panels: SEARCH then COMPARE. The first interaction is
           planning a trip â€” never Driver Mode. Hidden while driving/error.
           When a barangay's Flood Insights is open, it temporarily REPLACES the
           resumable search panel so two large left-side panels never stack
           (they restore when Insights closes). */}
-      {primaryLeftPanel === 'search' && (
+      {primaryLeftPanel === 'search' && mapMode === 'route' && (
         <div className="baharoute-trip-host baharoute-trip-host--search" data-testid="trip-host">
           <RouteSearchPanel
             origin={tripOrigin}
@@ -2966,6 +3182,7 @@ export function MapView({
             tab={insightsTab}
             onTabChange={setInsightsTab}
             current={barangayPanelProps}
+            webEvidence={barangayWebEvidence}
             historical={historicalRiskByBarangay.get(popup.psgc) ?? null}
             timelineStep={timelineStep}
             onTimelineStep={handleTimelineStep}
@@ -2998,6 +3215,53 @@ export function MapView({
         </button>
       )}
 
+      {/* HISTORICAL Flood Evidence panel (DEMO / RESEARCH USE ONLY). Context
+          only; selecting an item opens its historical popup and (for EXACT/HIGH
+          items) focuses the map. Never affects current risk/closures/routing. */}
+      {showHistoricalEvidence && (
+        <div className="baharoute-historical-host" data-testid="historical-evidence-host">
+          <HistoricalEvidencePanel
+            evidence={historicalFloodEvidence}
+            onAgentRunChange={setHistoricalAgentRan}
+            onClose={() => {
+              setShowHistoricalEvidence(false);
+              setHistoricalAgentRan(false);
+              setMapMode('route');
+            }}
+            onFilteredChange={(filtered) => {
+              const liveMap = managerRef.current?.getMap?.() ?? null;
+              if (liveMap) {
+                updateHistoricalEvidenceSource(
+                  liveMap as unknown as HistoricalSourceUpdateMap,
+                  filtered,
+                );
+              }
+            }}
+            onSelect={(item) => {
+              setPopup({
+                kind: 'historical',
+                props: {
+                  title: item.title,
+                  city: item.city,
+                  eventLabel: item.eventLabel,
+                  eventDate: item.eventDate,
+                  publicationDate: item.publicationDate,
+                  floodCondition: item.floodCondition,
+                  reportedDepth: item.reportedDepth,
+                  passability: item.passability,
+                  sourceName: item.sourceName,
+                  sourceUrl: item.sourceUrl,
+                  locationPrecision: item.locationPrecision,
+                },
+                lngLat: item.coordinates
+                  ? { lng: item.coordinates[0], lat: item.coordinates[1] }
+                  : undefined,
+              });
+            }}
+          />
+        </div>
+      )}
+
       {/* Report / susceptibility popups keep the compact floating card host.
           Mutually exclusive with the report-compose form (defense-in-depth for
           #1/#6): never render a selected-report popup while composing/editing a
@@ -3014,6 +3278,10 @@ export function MapView({
           </button>
           {popup.kind === 'report' ? (
             <ReportPopup {...popup.props} />
+          ) : popup.kind === 'evidence' ? (
+            <EvidencePopup {...popup.props} />
+          ) : popup.kind === 'historical' ? (
+            <HistoricalEvidencePopup {...popup.props} />
           ) : (
             <FloodPopup {...popup.props} />
           )}

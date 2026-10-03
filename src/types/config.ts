@@ -15,6 +15,13 @@ export interface AppConfig {
    * is shown (Req 17.4).
    */
   hasTileKey: boolean;
+  /**
+   * Demo Mode for hackathon presentation. When true, clearly-labeled synthetic
+   * fixtures (community report, flood evidence, confirmed closure, reroute) are
+   * injected and badged "DEMO". When false, NO synthetic item appears. Defaults
+   * to false so production never shows demo data unless explicitly enabled.
+   */
+  demoMode: boolean;
 }
 
 export interface RecencyConfig {
