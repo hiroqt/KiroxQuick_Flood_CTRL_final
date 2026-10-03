@@ -6,8 +6,8 @@
 // Optimizations:
 //   1. Multi-coordinate batching: Comma-separated coordinates in 1 HTTP request
 //      for up to 50 coordinates, eliminating 17 separate round-trips down to 1.
-//   2. Stripped variables & restricted horizon: Only requests current temperature,
-//      humidity, and weather_code with forecast_days=1 (cuts 80%+ payload size).
+//   2. Current conditions only: Requests temperature, humidity, and weather_code
+//      with no forecast horizon, avoiding unused hourly and daily forecast data.
 //   3. Stale-While-Revalidate (SWR) cache with 15-minute TTL: Instant UI render
 //      from stale cache while revalidating in background; in-flight deduplication
 //      prevents concurrent duplicate requests.
@@ -116,7 +116,8 @@ function parseWeatherRecord(
 
 /**
  * Builds an Open-Meteo URL stripping unused variables (surface_pressure, wind,
- * etc.) and restricting forecast horizon to 1 day.
+ * etc.) and disabling the forecast horizon. Camera details only display current
+ * conditions, so forecast data is unnecessary.
  */
 function buildOpenMeteoUrl(
   lats: readonly number[],
@@ -126,7 +127,7 @@ function buildOpenMeteoUrl(
   url.searchParams.set('latitude', lats.map((lat) => lat.toFixed(4)).join(','));
   url.searchParams.set('longitude', lngs.map((lng) => lng.toFixed(4)).join(','));
   url.searchParams.set('current', 'temperature_2m,relative_humidity_2m,weather_code');
-  url.searchParams.set('forecast_days', '1');
+  url.searchParams.set('forecast_days', '0');
   url.searchParams.set('temperature_unit', 'celsius');
   url.searchParams.set('timezone', 'Asia/Manila');
   return url;

@@ -1,4 +1,4 @@
-﻿/*
+/*
  * src/styles/layout.css â€” Responsive layout for BahaRoute (Task 16).
  *
  * Implements the design "Responsive layout strategy" around a single 768px
@@ -626,9 +626,11 @@ body,
 }
 
 .baharoute-cam-panel {
-  position: absolute;
-  right: calc(100% + 8px);
-  top: 0;
+  position: fixed;
+  left: auto;
+  top: calc(50% - 40px);
+  right: calc(60px + var(--baharoute-safe-right));
+  transform: translateY(-50%);
   width: min(440px, calc(100vw - 32px));
   max-height: calc(100vh - 2 * var(--baharoute-control-inset) - 40px);
   overflow-y: auto;
@@ -664,6 +666,7 @@ body,
 .baharoute-cam-panel--mobile {
   position: relative;
   inset: auto;
+  transform: none;
   width: min(520px, 100%);
   max-height: 100%;
   margin: auto;
@@ -1141,33 +1144,42 @@ body,
   transform: scale(1.06);
 }
 .baharoute-camera-popup {
-  width: min(300px, calc(100vw - 64px));
+  display: flex;
+  flex-direction: column;
+  width: min(244px, calc(100vw - 64px));
   max-height: min(72vh, 620px);
   overflow-y: auto;
   overscroll-behavior: contain;
-  color: #172b36;
+  color: #1f2937;
   font-family: inherit;
+  background: #fff;
+  border-radius: 0 0 12px 12px;
+  box-shadow: 0 8px 24px rgba(9, 13, 20, 0.34);
 }
+.baharoute-camera-popup__media { order: -1; }
+.baharoute-camera-popup__title { order: 0; padding: 10px 12px 0; }
+.baharoute-camera-popup__summary { margin-right: 12px; margin-left: 12px; }
+.baharoute-camera-popup__summary { order: 1; }
+.mapboxgl-popup-content:has(.baharoute-camera-popup) {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 12px;
+  background: transparent;
+}
+.mapboxgl-popup:has(.baharoute-camera-popup) .mapboxgl-popup-tip { border-top-color: #fff; }
+.mapboxgl-popup-close-button { color: #64748b; }
 .baharoute-camera-popup__title {
-  margin: 0 0 4px;
-  font-size: 15px;
+  margin: 0 0 5px;
+  font-size: 14px;
   line-height: 1.3;
 }
-.baharoute-camera-popup__location,
-.baharoute-camera-popup__timestamp,
-.baharoute-camera-popup__attribution,
-.baharoute-camera-popup__weather-source {
-  margin: 0 0 8px;
-  color: #52636d;
-  font-size: 12px;
-  line-height: 1.4;
-}
 .baharoute-camera-popup__summary {
-  margin: 10px 0;
-  padding: 10px;
-  border: 1px solid #d9e3e7;
+  margin: 8px 0;
+  padding: 8px;
+  border: 1px solid #e2e8f0;
   border-radius: 8px;
-  background: #f7fafb;
+  background: #fff;
+  color: #1f2937;
 }
 .baharoute-camera-popup__summary h3 {
   margin: 0 0 8px;
@@ -1182,27 +1194,23 @@ body,
   line-height: 1.4;
 }
 .baharoute-camera-popup__summary-fields dt {
-  color: #52636d;
+  color: #475569;
 }
 .baharoute-camera-popup__summary-fields dd {
   margin: 0;
   font-weight: 600;
 }
-.baharoute-camera-popup__weather-source {
-  margin: 8px 0 0;
-  font-size: 10px;
-}
 .baharoute-camera-popup__media {
   overflow: hidden;
-  margin: 8px 0;
-  border-radius: 8px;
+  margin: 0;
+  border-radius: 12px 12px 0 0;
   background: #101c22;
 }
 .baharoute-camera-popup__image,
 .baharoute-camera-popup__video {
   display: block;
   width: 100%;
-  max-width: 300px;
+  max-width: 244px;
   height: auto;
   aspect-ratio: 16 / 9;
   object-fit: cover;
@@ -1210,11 +1218,6 @@ body,
 }
 .baharoute-camera-popup__video {
   height: 169px;
-}
-.baharoute-camera-popup__attribution a,
-.baharoute-camera-popup__weather-source a {
-  color: #075b75;
-  text-decoration: underline;
 }
 .baharoute-flood-popup__title {
   margin: 0 40px 8px 0;
@@ -1295,7 +1298,9 @@ body,
     position: fixed;
     left: 0;
     right: 0;
+    top: auto;
     bottom: 0;
+    transform: none;
     width: auto;
     max-height: 80dvh;
     padding-bottom: calc(14px + var(--baharoute-safe-bottom));
@@ -2419,7 +2424,7 @@ body,
     box-shadow: none;
   }
   .baharoute-search-panel {
-    max-height: 72vh;
+    max-height: 80vh;
     overflow-y: auto;
     padding: 4px 16px calc(16px + var(--baharoute-safe-bottom));
     box-sizing: border-box;
@@ -2428,12 +2433,18 @@ body,
     box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.18);
   }
   .baharoute-search-panel.is-reopening {
-    animation: baharoute-search-reopen 280ms ease-in-out;
+    animation: baharoute-search-reopen 280ms ease-in;
   }
 }
 @keyframes baharoute-search-reopen {
-  from { transform: translateY(100%); }
-  to { transform: translateY(0); }
+  from {
+    transform: translateY(100%);
+    opacity: 0.7;
+  }
+  to {
+    transform: translateY(0);
+    opacity: 1;
+  }
 }
 
 /* ==========================================================================
