@@ -11,5 +11,5 @@ export const cityPieces = ncrCityContext.features.map((feature, index) => ({
     ? [feature.geometry.coordinates]
     : feature.geometry.coordinates
   ).map((polygon) => polygon.map((ring) => ring.map(project))),
-  color: ['#b5c7ac', '#cad5bf', '#a4bc9b', '#d9dfcd', '#bbcbb2'][index % 5],
+  color: ['#a8c6ef', '#c2d8f4', '#8fb6ea', '#d2e2f7', '#b5cef2'][index % 5],
 }));

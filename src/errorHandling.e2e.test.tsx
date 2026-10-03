@@ -82,7 +82,7 @@ describe('Error Handling — missing API key (Req 17.4)', () => {
 
     // Shell still renders.
     expect(
-      screen.getByRole('heading', { name: /baharoute/i }),
+      screen.getByRole('heading', { name: /flood-ctrl/i }),
     ).toBeInTheDocument();
 
     // Config-incomplete alert is shown.

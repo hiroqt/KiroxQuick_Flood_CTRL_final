@@ -1,5 +1,5 @@
 /**
- * App shell for BahaRoute — Milestone 1.
+ * App shell for Flood-CTRL — Milestone 1.
  *
  * Responsibilities (design → Architecture, "Missing-key handling"):
  * - Load the runtime config (Tile_Provider API key) via loadConfig().
@@ -21,6 +21,7 @@ import { ConfigIncomplete } from './components/overlays/ConfigIncomplete';
 import { loadConfig as defaultLoadConfig } from './services/env';
 import type { AppConfig } from './types/config';
 import type { MapViewProps } from './components/MapView';
+import floodCtrlLogo from './assets/flood-ctrl-logo.png';
 
 export interface AppProps {
   /** Pre-resolved config. When provided, `loadConfig` is not called. */
@@ -46,7 +47,15 @@ export default function App({
       {/* Enhancement: restrained floating brand pill instead of a full-width
           header, so the map fills the screen (navigation spec Req 3). */}
       <header className="baharoute-header baharoute-brand">
-        <h1 className="baharoute-brand__name">BahaRoute</h1>
+        <h1 className="baharoute-brand__name">
+          <img
+            className="baharoute-brand__logo"
+            src={floodCtrlLogo}
+            alt="Flood-CTRL"
+            width={120}
+            height={40}
+          />
+        </h1>
         <span className="baharoute-brand__scope">Metro Manila</span>
       </header>
 

@@ -120,4 +120,4 @@ export function isWithinNCR(lng: number, lat: number): boolean {
 
 /** The user-facing message shown when a chosen point is outside NCR coverage. */
 export const UNSUPPORTED_AREA_MESSAGE =
-  'BahaRoute covers Metro Manila / NCR only. Choose an origin and destination within the National Capital Region.';
+  'Flood-CTRL covers Metro Manila / NCR only. Choose an origin and destination within the National Capital Region.';
