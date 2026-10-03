@@ -80,6 +80,8 @@ export interface RouteSearchPanelProps {
   pickTarget?: PickTarget;
   /** Proceed to route comparison with the chosen origin + destination. */
   onFindRoutes: (origin: TripEndpoint, destination: TripEndpoint) => void;
+  /** Skip a saved pair on remount so Back can leave its locations editable. */
+  autoFindOnMount?: boolean;
   /** Injectable place search (tests). Defaults to the local NCR index. */
   searchPlaces?: (query: string, limit?: number) => NcrPlace[];
   /** True while the parent is computing routes (disables the action). */
@@ -122,6 +124,7 @@ export function RouteSearchPanel({
   onPickOnMap,
   pickTarget = null,
   onFindRoutes,
+  autoFindOnMount = true,
   searchPlaces = defaultSearchPlaces,
   busy = false,
   locationStatus = 'notRequested',
@@ -193,11 +196,11 @@ export function RouteSearchPanel({
   // automatically (no manual "Find routes" click). A ref guards against
   // re-firing for the same origin/destination pair (e.g. on unrelated
   // re-renders); it re-arms whenever either endpoint changes.
-  const lastPairRef = useRef<string | null>(null);
   const pairKey =
     origin && destination
       ? `${origin.coord[0]},${origin.coord[1]}->${destination.coord[0]},${destination.coord[1]}`
       : null;
+  const lastPairRef = useRef<string | null>(autoFindOnMount ? null : pairKey);
   useEffect(() => {
     if (!origin || !destination || !pairKey) {
       lastPairRef.current = null;
@@ -471,6 +474,15 @@ export function RouteSearchPanel({
 
       {/* Route preview starts automatically once both points are set. While it
           computes, show a subtle status; otherwise a hint of what to do next. */}
+      {!autoFindOnMount && origin && destination && !busy && (
+        <button
+          type="button"
+          className="baharoute-chip-button baharoute-focus-ring"
+          onClick={() => onFindRoutes(origin, destination)}
+        >
+          Choose routes
+        </button>
+      )}
       {busy ? (
         <p className="baharoute-trip-panel__hint" role="status" data-testid="finding-routes-status">
           Finding routes…

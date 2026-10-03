@@ -17,6 +17,8 @@ import { useState } from 'react';
 import type { RouteOption, RoutePreference } from '../../services/routePlanning';
 import {
   isRouteStartBlocked,
+  getInitialRouteSelection,
+  sameRouteFloodAssessment,
   routeSegmentExplanation,
 } from '../../services/routePlanning';
 import {
@@ -43,7 +45,7 @@ const PREFERENCES: ReadonlyArray<{ value: RoutePreference; label: string }> = [
 ];
 
 export interface RouteComparePanelProps {
-  /** Compared options (already scored + labeled) to display, best first. */
+  /** Compared options; cards display in route-letter order independently of selection. */
   options: readonly RouteOption[];
   /** Start Driver Mode for the chosen option. The only Driver Mode entry. */
   onStart: (option: RouteOption) => void;
@@ -113,21 +115,29 @@ export function RouteComparePanel({
   finding = false,
   now = () => new Date(),
 }: RouteComparePanelProps) {
-  // Uncontrolled fallback: preselect the first (best-balanced) option.
-  const [internalSelectedId, setInternalSelectedId] = useState<string | null>(
-    options.length > 0 ? options[0].candidate.id : null,
-  );
+  // Internal state records explicit choices; automatic selection is validated
+  // on every render, including when asynchronous options arrive or change.
+  const [internalSelectedId, setInternalSelectedId] = useState<string | null>(null);
   const isControlled = controlledSelectedId !== undefined;
-  const selectedId = isControlled ? controlledSelectedId : internalSelectedId;
+  const selectedId = isControlled ? controlledSelectedId
+    : options.some((o) => o.candidate.id === internalSelectedId) ? internalSelectedId
+      : getInitialRouteSelection(options)?.candidate.id ?? null;
   const selectId = (id: string): void => {
     if (isControlled) onSelect?.(id);
     else setInternalSelectedId(id);
   };
 
+  const routeLetter = (option: RouteOption): number => {
+    const letter = /\broute ([a-z])\b/i.exec(option.candidate.label)?.[1];
+    return letter ? letter.toUpperCase().charCodeAt(0) : 91;
+  };
+  const displayedOptions = [...options].sort((a, b) => routeLetter(a) - routeLetter(b));
+
   const selected =
-    options.find((o) => o.candidate.id === selectedId) ?? options[0] ?? null;
+    options.find((o) => o.candidate.id === selectedId) ?? null;
   // A route through a confirmed closure is not passable → Start is blocked.
   const startBlocked = selected != null && isRouteStartBlocked(selected);
+  const sameFloodAssessment = options.length > 1 && options.every((option) => sameRouteFloodAssessment(option, options[0]));
 
   return (
     <section
@@ -231,8 +241,32 @@ export function RouteComparePanel({
         </p>
       )}
 
+      {!finding && options.length > 0 && options.length < 3 && (
+        <p className="baharoute-route-status" role="status" data-testid="route-alternative-unavailable">
+          Only {options.length} meaningfully different route suggestions are available. Try another starting point or travel mode.
+        </p>
+      )}
+      {!finding && options.length > 0 && !getInitialRouteSelection(options) && (
+        <p className="baharoute-route-status baharoute-route-status--warn" role="status" data-testid="default-route-unavailable">
+          No default route qualifies: zero detected flood exposure and valid travel time must be verified.
+          Choose an alternative explicitly or try another trip.
+        </p>
+      )}
+      {selected && (
+        <p className="baharoute-route-status" role="status" data-testid="selected-route-status">
+          Selected: {selected.candidate.label} · Blue line on the map
+        </p>
+      )}
+
+      {!finding && sameFloodAssessment && (
+        <p className="baharoute-route-status" role="status" data-testid="same-flood-assessment">
+          {options.every((option) => option.risk.exposureVerified)
+            ? 'These routes have the same current flood assessment. Compare ETA, distance and different roads; the alternatives offer no measured flood advantage.'
+            : 'The available flood data does not distinguish these routes. Exposure is not fully verified; compare ETA, distance and different roads.'}
+        </p>
+      )}
       <ul className="baharoute-route-cards" role="radiogroup" aria-label="Available routes">
-        {options.map((option) => {
+        {displayedOptions.map((option) => {
           const { candidate, risk, recommendation, reasons } = option;
           const isSelected = candidate.id === selected?.candidate.id;
           const riskText = isDataQualityState(risk.level)
@@ -251,6 +285,7 @@ export function RouteComparePanel({
                 data-testid={`route-card-${candidate.id}`}
               >
                 <div className="baharoute-route-card__top">
+                  {isSelected && <span className="baharoute-route-card__selected">✓ Selected</span>}
                   <span
                     className={`baharoute-route-card__badge baharoute-route-card__badge--${recommendation}`}
                     data-testid={`route-badge-${candidate.id}`}
@@ -258,7 +293,14 @@ export function RouteComparePanel({
                     {recommendationLabel(recommendation)}
                   </span>
                   <span className="baharoute-route-card__label">{candidate.label}</span>
+                  {option.suggestion && <span className="baharoute-route-card__label" data-testid={`route-suggestion-${candidate.id}`}>{option.suggestion}</span>}
                 </div>
+
+                {Boolean(candidate.demoFloods?.length) && (
+                  <p className="baharoute-route-card__segments">
+                    DEMO — simulated flood: {candidate.demoFloods?.[0].passability === 'passable' ? 'Passable' : 'Not passable'}. Not live road conditions.
+                  </p>
+                )}
 
                 <div className="baharoute-route-card__primary">
                   <span className="baharoute-route-card__eta">
@@ -278,11 +320,34 @@ export function RouteComparePanel({
                   </span>
                 </div>
 
+                {option.comparison && (
+                  <p className="baharoute-route-card__segments" data-testid={`route-tradeoff-${candidate.id}`}>
+                    Compared with {option.comparison.referenceLabel}: approximately {option.comparison.sharedPathPercent}% shared road corridor;
+                    {' '}{formatDistance(option.comparison.differentDistanceM)} on different roads.
+                    {' '}{option.comparison.extraDurationS === 0 ? 'Same estimated travel time'
+                      : `${formatDuration(Math.abs(option.comparison.extraDurationS))} ${option.comparison.extraDurationS > 0 ? 'slower' : 'faster'}`}.
+                    {' '}{option.comparison.extraDistanceM === 0 ? 'Same distance'
+                      : `${formatDistance(Math.abs(option.comparison.extraDistanceM))} ${option.comparison.extraDistanceM > 0 ? 'longer' : 'shorter'}`}.
+                  </p>
+                )}
+
                 <dl className="baharoute-route-card__facts">
                   <div className="baharoute-route-card__fact">
                     <dt>Flood risk</dt>
                     <dd data-testid={`route-risk-${candidate.id}`}>{riskText}</dd>
                   </div>
+                  {risk.exposureDistanceM != null && (
+                    <div className="baharoute-route-card__fact">
+                      <dt>Estimated elevated-risk distance</dt>
+                      <dd>{formatDistance(risk.exposureDistanceM)}</dd>
+                    </div>
+                  )}
+                  {risk.unknownDistanceM != null && risk.unknownDistanceM > 0 && (
+                    <div className="baharoute-route-card__fact">
+                      <dt>Unknown coverage</dt>
+                      <dd>{formatDistance(risk.unknownDistanceM)}</dd>
+                    </div>
+                  )}
                   <div className="baharoute-route-card__fact">
                     <dt>Rainfall</dt>
                     <dd>{rainfallTrendLabel(risk.trend)}</dd>
@@ -343,7 +408,7 @@ export function RouteComparePanel({
         type="button"
         className="baharoute-trip-panel__primary baharoute-focus-ring"
         onClick={() => selected && !startBlocked && onStart(selected)}
-        disabled={!selected || startBlocked}
+        disabled={finding || !selected || startBlocked}
         data-testid="start-route-button"
       >
         Start in BahaRoute Driver Mode

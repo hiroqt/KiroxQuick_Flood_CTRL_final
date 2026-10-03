@@ -2,11 +2,9 @@
 //
 // Route planning + FLOOD-AWARE route comparison for the Search → Compare flow.
 //
-// There is no runtime Directions backend for the hackathon MVP. For the flagship
-// demo pair (PITX → SM Mall of Asia) we return the bundled real Mapbox route as
-// the primary candidate and its bundled flood-avoiding reroute as a lower-risk
-// alternative — both drivable by the existing simulator. For any other NCR pair
-// we return a single straight-line candidate so the flow still completes.
+// The demo pair has three bundled road routes. Other pairs use Mapbox alternatives,
+// with bounded waypoint searches when the provider supplies only one path.
+// Only distinct provider geometries are offered, with at most three choices.
 //
 // Route risk is AGGREGATED from BahaRoute's existing signals, per docs/
 // FLOOD_SEMANTICS.md:
@@ -18,6 +16,7 @@
 // susceptibility is supporting context only and never classifies a route as
 // currently flooded on its own.
 
+import { assignRouteFloodDemos, createRouteFloodDemo, type RouteFloodDemo } from './routeFloodDemo';
 import type { CurrentRiskLevel, RainfallTrend } from '../types/risk';
 import { isDataQualityState, riskSeverity } from '../types/risk';
 import type { RouteManeuver } from '../data/fixtures/pitxToMoaRoute';
@@ -27,13 +26,15 @@ import {
 } from '../data/fixtures/pitxToMoaRoute';
 import { PITX_TO_MOA_HAZARDS, type DriveHazard } from '../data/fixtures/driveHazards';
 import { PITX_TO_MOA_REROUTES } from '../data/fixtures/floodReroutes';
-import { measureRoute, type LngLat } from '../simulation/routeGeometry';
+import { measureRoute, distanceMeters, type LngLat } from '../simulation/routeGeometry';
+import { compareRoutePaths, isUsableRouteGeometry } from './routeValidation';
 import { SIM_SPEED_MPS } from '../simulation/DriveSimulator';
 import { resolveBarangayForPoint } from './reportResolution';
 import {
   fetchDirectionsRoutes,
   type FetchLike,
   type TravelMode,
+  type DirectionsRoute,
 } from './directions';
 
 export type { TravelMode };
@@ -56,6 +57,8 @@ export interface RouteCandidate {
   readonly durationS: number;
   /** Demo hazards that lie on THIS route (empty for a hazard-avoiding alt). */
   readonly hazards: ReadonlyArray<DriveHazard>;
+  /** An optional route-relative demo point, separate from current risk evidence. */
+  readonly demoFloods?: ReadonlyArray<RouteFloodDemo>;
 }
 
 /** A single "Why this route?" bullet. */
@@ -85,6 +88,12 @@ export interface RouteRiskSummary {
   readonly trend: RainfallTrend;
   /** True when route risk could not be classified (no usable current data). */
   readonly dataUnavailable: boolean;
+  /** Every sampled area has usable current data; required for automatic defaults. */
+  readonly exposureVerified?: boolean;
+  /** Approximate route lengths through current elevated/higher risk and unknown coverage. */
+  readonly exposureDistanceM?: number;
+  readonly higherRiskDistanceM?: number;
+  readonly unknownDistanceM?: number;
 }
 
 /** A comparison entry: a candidate + its risk summary + recommendation. */
@@ -100,6 +109,16 @@ export interface RouteOption {
     | 'unavailable';
   /** Concise, decision-focused bullets. Never says "safe". */
   readonly reasons: readonly RouteReason[];
+  /** Distance/exposure description of this suggestion, based on current signals. */
+  readonly suggestion?: string;
+  readonly comparison?: {
+    readonly referenceLabel: string;
+    readonly sharedPathPercent: number;
+    readonly differentDistanceM: number;
+    readonly extraDurationS: number;
+    readonly extraDistanceM: number;
+    readonly sameFloodAssessment: boolean;
+  };
 }
 
 /**
@@ -129,31 +148,33 @@ export interface RoutePlanningContext {
 /** Distance between route samples when aggregating risk (meters). */
 const SAMPLE_INTERVAL_M = 250;
 
-/** Distance under which two coordinates are considered the same place. */
-const NEAR_M_DEG = 0.02; // ~2.2 km in degrees; generous for landmark matching
-
+/** Only reuse the offline demo at its endpoints, never for nearby pinned journeys. */
 function near(a: readonly [number, number], b: readonly [number, number]): boolean {
-  return Math.abs(a[0] - b[0]) < NEAR_M_DEG && Math.abs(a[1] - b[1]) < NEAR_M_DEG;
+  return distanceMeters([a[0], a[1]], [b[0], b[1]]) < 30;
 }
 
 const PITX: readonly [number, number] = PITX_TO_MOA_ROUTE[0];
 const MOA: readonly [number, number] = PITX_TO_MOA_ROUTE[PITX_TO_MOA_ROUTE.length - 1];
 
-/** The bundled flood-avoiding alternative for the PITX→MOA demo, from origin. */
-function pitxToMoaAlternative(): RouteCandidate | null {
-  // Use the earliest full reroute for the primary hazard (starts near the
-  // origin), which already avoids EVERY demo hazard to MOA.
-  const alt = PITX_TO_MOA_REROUTES.find((r) => r.hazardId === 'demo-roxas-baclaran');
+/** Join a bundled road reroute to the original road prefix from PITX. */
+function bundledAlternative(hazardId: string, id: string, label: string): RouteCandidate | null {
+  const alt = PITX_TO_MOA_REROUTES.find((r) => r.hazardId === hazardId);
   if (!alt) return null;
-  const measured = measureRoute(alt.route);
+  const original = measureRoute(PITX_TO_MOA_ROUTE);
+  const prefix = original.points.filter((_, i) => original.cumulative[i] < alt.fromM);
+  const prefixLength = measureRoute([...prefix, alt.route[0]]).length;
+  const route = [...prefix, ...alt.route];
+  const measured = measureRoute(route);
   return {
-    id: 'pitx-moa-lowrisk',
-    label: 'Route B — flood-avoiding',
-    route: alt.route,
-    maneuvers: alt.maneuvers,
+    id, label, route,
+    maneuvers: [
+      ...PITX_TO_MOA_MANEUVERS.filter((m) => m.atM < alt.fromM && m.type !== 'arrive'),
+      ...alt.maneuvers.filter((m) => m.type !== 'depart').map((m) => ({ ...m, atM: m.atM + prefixLength })),
+    ],
     distanceM: measured.length,
     durationS: SIM_SPEED_MPS > 0 ? measured.length / SIM_SPEED_MPS : 0,
-    hazards: [], // avoids every demo hazard
+    // Later detours still cross earlier demo hazards on the original prefix.
+    hazards: PITX_TO_MOA_HAZARDS.filter((h) => h.atM < alt.fromM),
   };
 }
 
@@ -165,6 +186,11 @@ export interface PlanRoutesOptions {
   readonly fetchImpl?: FetchLike;
   /** Travel mode. Defaults to `drive`. Bike/Walk request cycling/walking. */
   readonly mode?: TravelMode;
+  /** Only retain roads satisfying a caller's flood-avoidance constraint. */
+  readonly routeFilter?: (route: DirectionsRoute) => boolean;
+  readonly excludePoints?: readonly LngLat[];
+  /** Additional road-snapped shaping points around a blocked road. */
+  readonly avoidanceWaypoints?: readonly LngLat[];
 }
 
 /** A short mode-specific label prefix for generated route candidates. */
@@ -198,6 +224,56 @@ function straightLineCandidate(
   };
 }
 
+/** Reject nearly identical road corridors even with different vertex sampling. */
+function samePath(a: DirectionsRoute, b: DirectionsRoute): boolean {
+  return !compareRoutePaths(a.geometry, b.geometry).meaningful;
+}
+
+/** Find three actual road paths; never duplicate a route to fill the second card. */
+async function findDistinctRoutes(
+  origin: LngLat, destination: LngLat, options: PlanRoutesOptions,
+): Promise<DirectionsRoute[]> {
+  const request = (via?: LngLat) => fetchDirectionsRoutes(
+    origin, destination, options.mapboxToken ?? '',
+    { mode: options.mode, alternatives: !via, via, fetchImpl: options.fetchImpl,
+      signal: AbortSignal.timeout(10000), excludePoints: options.excludePoints },
+  );
+  const routes: DirectionsRoute[] = [];
+  const add = (candidates: DirectionsRoute[]) => {
+    for (const candidate of candidates) {
+      if (routes.length >= 3) break;
+      if ((!options.routeFilter || options.routeFilter(candidate)) && isUsableRouteGeometry(candidate.geometry) && !routes.some((route) => samePath(route, candidate))) routes.push(candidate);
+    }
+  };
+  const initial = await request();
+  add(initial);
+  // Do not multiply failing network requests or search a zero-length journey.
+  if ((initial.length === 0 && !options.avoidanceWaypoints?.length) || routes.length >= 3 || distanceMeters(origin, destination) < 50) return routes;
+  // Point exclusions can return NoRoute even when a nearby road detour exists.
+  // Try local corridors around the flood before the wider journey-midpoint search.
+  const waypoints = options.avoidanceWaypoints ?? [];
+  for (let i = 0; i < waypoints.length; i += 2) {
+    const results = await Promise.all(waypoints.slice(i, i + 2).map((via) => request(via)));
+    for (const result of results) add(result);
+    if (routes.length >= 3) return routes;
+  }
+  const latitude = (origin[1] + destination[1]) / 2;
+  const lngScale = Math.cos(latitude * Math.PI / 180);
+  const dx = (destination[0] - origin[0]) * lngScale;
+  const dy = destination[1] - origin[1];
+  const length = Math.hypot(dx, dy);
+  const offset = Math.min(0.015, Math.max(0.003, length * 0.2));
+  for (const factor of [1, 2]) {
+    const results = await Promise.all([-1, 1].map((side) => request([
+      (origin[0] + destination[0]) / 2 - dy / length * offset * factor * side / lngScale,
+      latitude + dx / length * offset * factor * side,
+    ])));
+    for (const result of results) add(result);
+    if (routes.length >= 3) break;
+  }
+  return routes;
+}
+
 /**
  * Returns drivable candidate routes for an origin/destination pair.
  *
@@ -207,17 +283,17 @@ function straightLineCandidate(
  * LineString the simulator drives and the map draws, so the vehicle never cuts
  * across buildings. Only if routing is unavailable (no token / network error)
  * does it fall back to a single straight-line candidate; even then the drawn
- * line and the simulated path share that one geometry.
+ * line and the simulated path share that one geometry. When only one distinct
+ * provider path exists, the comparison panel explains the missing alternative.
  */
-export async function planRoutes(
+async function planRouteCandidates(
   origin: readonly [number, number],
   destination: readonly [number, number],
   options: PlanRoutesOptions = {},
 ): Promise<RouteCandidate[]> {
   const mode: TravelMode = options.mode ?? 'drive';
   const isPitxMoa =
-    (near(origin, PITX) && near(destination, MOA)) ||
-    (near(origin, MOA) && near(destination, PITX));
+    near(origin, PITX) && near(destination, MOA);
 
   // The bundled PITX→MOA demo geometry is DRIVING geometry with demo hazards;
   // it must NOT be reused for cycling/walking (spec: never reuse driving
@@ -233,23 +309,21 @@ export async function planRoutes(
       durationS: SIM_SPEED_MPS > 0 ? measured.length / SIM_SPEED_MPS : 0,
       hazards: PITX_TO_MOA_HAZARDS,
     };
-    const alt = pitxToMoaAlternative();
-    return alt ? [primary, alt] : [primary];
+    const alt = bundledAlternative('demo-roxas-baclaran', 'pitx-moa-lowrisk', 'Route B — flood-avoiding');
+    const longer = bundledAlternative('demo-edsa-extension', 'pitx-moa-longer', 'Route C — later detour');
+    return [primary, alt, longer].filter((route): route is RouteCandidate => route !== null);
   }
 
   // Generic pair (or non-drive mode): obtain REAL path-following routes from the
   // Mapbox Directions profile for this mode, asking for ALTERNATIVES so the user
-  // can compare up to ~3 provider routes. Geometry is never shared across modes.
-  const routed = await fetchDirectionsRoutes(
-    [origin[0], origin[1]],
-    [destination[0], destination[1]],
-    options.mapboxToken ?? '',
-    { mode, alternatives: true, fetchImpl: options.fetchImpl },
+  // can compare three distinct provider routes. Geometry is never shared across modes.
+  const routed = await findDistinctRoutes(
+    [origin[0], origin[1]], [destination[0], destination[1]], { ...options, mode },
   );
   if (routed.length > 0) {
     return routed.map((r, i) => ({
       id: i === 0 ? `${mode}-route` : `${mode}-route-alt${i}`,
-      label: i === 0 ? `${MODE_LABEL[mode]} route` : `${MODE_LABEL[mode]} alternative ${i}`,
+      label: i === 0 ? `${MODE_LABEL[mode]} route A` : `${MODE_LABEL[mode]} route ${String.fromCharCode(65 + i)}`,
       route: r.geometry,
       maneuvers: r.maneuvers,
       distanceM: r.distanceM,
@@ -269,6 +343,24 @@ export async function planRoutes(
   // single straight-line candidate so the flow still completes. Not a fake
   // "alternative" — it is the sole candidate.
   return [straightLineCandidate(origin, destination)];
+}
+
+/** Distribute the two journey demos across different route options. */
+export async function planRoutes(
+  origin: readonly [number, number],
+  destination: readonly [number, number],
+  options: PlanRoutesOptions = {},
+): Promise<RouteCandidate[]> {
+  const candidates = await planRouteCandidates(origin, destination, options);
+  return assignRouteFloodDemos(candidates).map((candidate) => {
+    if (candidate.id !== 'pitx-moa-lowrisk') return candidate;
+    // This verified road point is on Route B's earlier turn-off, >=50 m from
+    // the later flood-avoiding turn-off. A midpoint demo blocked every bundled
+    // alternative because they all rejoined that same road.
+    return { ...candidate, demoFloods: createRouteFloodDemo(candidate.route, candidate.maneuvers,
+      'passable', [{ id: 'demo-route-passable', atM: 2400, state: 'YELLOW',
+        street: [...candidate.maneuvers].reverse().find((m) => m.atM <= 2400 && m.street)?.street ?? 'Route B' }]) };
+  });
 }
 
 /**
@@ -314,11 +406,22 @@ export function summarizeRouteRisk(
 ): RouteRiskSummary {
   const measured = measureRoute(candidate.route);
   const barangays = new Set<string>();
+  let coverageMissing = false;
   for (let m = 0; m <= measured.length; m += SAMPLE_INTERVAL_M) {
     const pt = pointAlongSafe(measured.points, measured.cumulative, m);
     const psgc = resolveBarangayForPoint(pt[0], pt[1]);
     if (psgc) barangays.add(psgc);
+    else coverageMissing = true;
+    const middle = pointAlongSafe(measured.points, measured.cumulative, Math.min(measured.length, m + SAMPLE_INTERVAL_M / 2));
+    const middleBarangay = resolveBarangayForPoint(middle[0], middle[1]);
+    if (middleBarangay) barangays.add(middleBarangay);
+    else coverageMissing = true;
   }
+
+  const endpoint = candidate.route[candidate.route.length - 1];
+  const endpointBarangay = endpoint && resolveBarangayForPoint(endpoint[0], endpoint[1]);
+  if (endpointBarangay) barangays.add(endpointBarangay);
+  else coverageMissing = true;
 
   let level: CurrentRiskLevel = 'LOW';
   let sawClassified = false;
@@ -334,6 +437,7 @@ export function summarizeRouteRisk(
       sawClassified = true;
     }
     const bRisk = ctx.riskByBarangay?.(psgc);
+    if (!bRisk || isDataQualityState(bRisk)) coverageMissing = true;
     if (bRisk && !isDataQualityState(bRisk)) {
       sawClassified = true;
       level = maxLevel(level, bRisk);
@@ -354,9 +458,31 @@ export function summarizeRouteRisk(
     if (riskSeverity(hzRisk) >= riskSeverity('HIGH')) higherRiskSegments += 1;
   }
 
-  // If live data is unavailable AND nothing classified the route, report it as
-  // data-unavailable rather than pretending it is LOW.
-  if (!sawClassified && ctx.dataUnavailable) {
+  let exposureDistanceM = 0;
+  let higherRiskDistanceM = 0;
+  let unknownDistanceM = 0;
+  // Measure exposure along the path, rather than comparing only its worst label.
+  for (let startM = 0; startM < measured.length; startM += SAMPLE_INTERVAL_M) {
+    const endM = Math.min(measured.length, startM + SAMPLE_INTERVAL_M);
+    const pt = pointAlongSafe(measured.points, measured.cumulative, (startM + endM) / 2);
+    const psgc = resolveBarangayForPoint(pt[0], pt[1]);
+    let segmentRisk = psgc ? ctx.riskByBarangay?.(psgc) : undefined;
+    if (!segmentRisk || isDataQualityState(segmentRisk) || ctx.dataUnavailable) {
+      unknownDistanceM += endM - startM;
+      coverageMissing = true;
+    }
+    if (psgc && ctx.closedBarangays?.has(psgc)) segmentRisk = 'CONFIRMED_NOT_PASSABLE';
+    for (const hazard of candidate.hazards) {
+      if (hazard.atM >= startM && hazard.atM < endM) segmentRisk = maxLevel(segmentRisk ?? 'UNKNOWN', hazardToRisk(hazard.state));
+    }
+    if (segmentRisk && !isDataQualityState(segmentRisk)) {
+      if (riskSeverity(segmentRisk) >= riskSeverity('ELEVATED')) exposureDistanceM += endM - startM;
+      if (riskSeverity(segmentRisk) >= riskSeverity('HIGH')) higherRiskDistanceM += endM - startM;
+    }
+  }
+
+  // Missing current classifications cannot establish zero flood exposure.
+  if (!sawClassified) {
     return {
       level: 'UNKNOWN',
       higherRiskSegments: 0,
@@ -365,6 +491,8 @@ export function summarizeRouteRisk(
       closureCount,
       trend: ctx.trend ?? 'unknown',
       dataUnavailable: true,
+      exposureVerified: false,
+      exposureDistanceM, higherRiskDistanceM, unknownDistanceM,
     };
   }
 
@@ -376,6 +504,8 @@ export function summarizeRouteRisk(
     closureCount,
     trend: ctx.trend ?? 'unknown',
     dataUnavailable: false,
+    exposureVerified: !ctx.dataUnavailable && !coverageMissing,
+    exposureDistanceM, higherRiskDistanceM, unknownDistanceM,
   };
 }
 
@@ -408,13 +538,48 @@ function hasReportedFlooding(r: RouteRiskSummary): boolean {
   return r.level === 'REPORTED_FLOODING';
 }
 
+/** LOW alone is insufficient when reports, closures, or missing data remain. */
+export function hasNoDetectedFloodExposure(risk: RouteRiskSummary): boolean {
+  return !risk.dataUnavailable && risk.exposureVerified !== false && risk.level === 'LOW' && risk.closureCount === 0 &&
+    risk.reportCount === 0 && risk.higherRiskSegments === 0;
+}
+
+/** Only verified, usable directions with zero detected exposure may be defaults. */
+export function isDefaultRouteEligible(option: Pick<RouteOption, 'candidate' | 'risk'>): boolean {
+  const { candidate, risk } = option;
+  return risk.exposureVerified === true && hasNoDetectedFloodExposure(risk) && candidate.hazards.length === 0 &&
+    candidate.id !== 'direct-line' && candidate.route.length >= 2 &&
+    candidate.route.every(([lng, lat]) => Number.isFinite(lng) && Number.isFinite(lat)) &&
+    Number.isFinite(candidate.durationS) && candidate.durationS > 0 &&
+    Number.isFinite(candidate.distanceM) && candidate.distanceM > 0;
+}
+
+/** ETA and travel time share durationS; distance breaks equal-time ties. */
+export function getValidatedDefaultRoute(options: readonly RouteOption[]): RouteOption | null {
+  return [...options].filter(isDefaultRouteEligible).sort((a, b) =>
+    a.candidate.durationS - b.candidate.durationS || a.candidate.distanceM - b.candidate.distanceM,
+  )[0] ?? null;
+}
+
+/** Route B is a selection fallback only; it does not gain a recommendation. */
+export function getInitialRouteSelection(options: readonly RouteOption[]): RouteOption | null {
+  // An available recommendation always takes priority over the Route B fallback.
+  const recommended = options.filter((option) => option.recommendation === 'recommended');
+  const validated = getValidatedDefaultRoute(recommended) ?? getValidatedDefaultRoute(options);
+  if (validated) return validated;
+  return options.find(({ candidate }) =>
+    candidate.id === 'pitx-moa-lowrisk' || /-route-alt1$/.test(candidate.id) ||
+    /\broute b\b/i.test(candidate.label),
+  ) ?? null;
+}
+
 /**
  * A preference-aware comparison score (LOWER is better). It only REORDERS the
  * provider's routes; it never changes geometry or invents routes.
  *
  * `lowerFloodExposure` (default) ranks primarily by flood exposure:
  *   1. confirmed closures  2. reported flooding  3. predicted flood-risk
- *   exposure (severity)  4. number of higher-risk segments  5. travel time.
+ *   exposure (severity)  4. number of higher-risk segments  5. distance.
  *
  * `faster` ranks primarily by travel time, but confirmed closures are STILL
  * avoided (heaviest weight) and exposure remains a secondary factor:
@@ -450,9 +615,24 @@ function preferenceScore(
   return closurePenalty + exposure + webNudge + timeMin * 0.25;
 }
 
+/** Compare current evidence, not historical susceptibility or travel time. */
+export function sameRouteFloodAssessment(a: RouteOption, b: RouteOption): boolean {
+  const first = a.risk;
+  const second = b.risk;
+  const ratio = (meters: number | undefined, option: RouteOption) => (meters ?? 0) / measureRoute(option.candidate.route).length;
+  return first.level === second.level && first.dataUnavailable === second.dataUnavailable &&
+    first.exposureVerified === second.exposureVerified && first.closureCount === second.closureCount &&
+    first.reportCount === second.reportCount &&
+    Math.abs((first.exposureDistanceM ?? 0) - (second.exposureDistanceM ?? 0)) < 250 &&
+    Math.abs((first.higherRiskDistanceM ?? 0) - (second.higherRiskDistanceM ?? 0)) < 250 &&
+    Math.abs(ratio(first.exposureDistanceM, a) - ratio(second.exposureDistanceM, b)) < 0.02 &&
+    Math.abs(ratio(first.unknownDistanceM, a) - ratio(second.unknownDistanceM, b)) < 0.02;
+}
+
 /**
  * Builds the compared, recommendation-labeled route options. The recommended
- * route is the best BALANCED option (time + flood exposure), not the fastest.
+ * default has verified zero detected exposure and the shortest travel time.
+ * If none qualifies, alternatives remain visible without an automatic default.
  * Labels: the winner is "Recommended"; a clearly lower-risk-but-present option
  * is "Lower-risk alternative"; a faster-but-riskier option is "Higher flood
  * exposure"; the rest are "Alternative". Routes with no usable current data are
@@ -463,22 +643,53 @@ export function compareRoutes(
   ctx: RoutePlanningContext = {},
   preference: RoutePreference = 'lowerFloodExposure',
 ): RouteOption[] {
-  const scored = candidates.map((candidate) => {
+  const scored = candidates.filter((candidate) => isUsableRouteGeometry(candidate.route)).map((candidate) => {
     const risk = summarizeRouteRisk(candidate, ctx);
     return { candidate, risk, score: preferenceScore({ candidate, risk }, preference) };
   });
   if (scored.length === 0) return [];
 
-  // Best preference score wins the recommendation — BUT a route through a
-  // confirmed closure is NEVER recommended. Prefer a closure-free route as the
-  // recommended one; only if EVERY route is closed does the best score win
-  // (still flagged, and Start is blocked upstream by the closure semantics).
-  const sorted = [...scored].sort((a, b) => a.score - b.score);
-  const closureFree = sorted.filter((s) => s.risk.closureCount === 0);
-  const best = closureFree[0] ?? sorted[0];
-  const anyClosureFree = closureFree.length > 0;
+  // Preferences order alternatives; default validation applies in every mode.
+  const sorted = [...scored].sort((a, b) => {
+    if (preference === 'faster') return a.score - b.score;
+    // Closures always come last. Prefer the shortest route with no detected
+    // exposure; otherwise use the least exposed available route, then distance.
+    const closure = a.risk.closureCount - b.risk.closureCount;
+    if (closure) return closure;
+    const clean = Number(hasNoDetectedFloodExposure(b.risk)) - Number(hasNoDetectedFloodExposure(a.risk));
+    if (clean) return clean;
+    if (!hasNoDetectedFloodExposure(a.risk)) {
+      const severity = (isDataQualityState(a.risk.level) ? 2.5 : riskSeverity(a.risk.level)) -
+        (isDataQualityState(b.risk.level) ? 2.5 : riskSeverity(b.risk.level));
+      if (severity) return severity;
+      const exposure = (a.risk.exposureDistanceM ?? 0) - (b.risk.exposureDistanceM ?? 0);
+      if (exposure) return exposure;
+      const segments = a.risk.higherRiskSegments - b.risk.higherRiskSegments;
+      if (segments) return segments;
+    }
+    return a.candidate.distanceM - b.candidate.distanceM || a.candidate.durationS - b.candidate.durationS;
+  });
+  const eligible = scored.filter(isDefaultRouteEligible).sort((a, b) =>
+    a.candidate.durationS - b.candidate.durationS || a.candidate.distanceM - b.candidate.distanceM,
+  );
+  const validatedDefault = eligible[0];
+  // Alternatives remain visible when there is no eligible automatic default.
+  const best = validatedDefault ?? sorted[0];
 
-  return scored.map((s) => {
+  // Put the recommended route first so cards, map, and Start share the default.
+  // All suggestions must differ from every other suggestion, including fixtures.
+  const distinct = [best];
+  for (const item of sorted) {
+    if (distinct.some((other) => other.candidate.id === item.candidate.id ||
+      !compareRoutePaths(other.candidate.route, item.candidate.route).meaningful)) continue;
+    distinct.push(item);
+  }
+  const remaining = distinct.filter((s) => s !== best).sort((a, b) => a.candidate.distanceM - b.candidate.distanceM);
+  const short = remaining.find((s) => !hasNoDetectedFloodExposure(s.risk)) ?? remaining[0];
+  const others = remaining.filter((s) => s !== short);
+  const long = [...others].reverse().find((s) => !hasNoDetectedFloodExposure(s.risk)) ?? others[others.length - 1];
+  const suggestions = [best, short, long].filter((s): s is typeof best => s != null);
+  const options: RouteOption[] = suggestions.map((s, index) => {
     const hasClosure = s.risk.closureCount > 0;
     const isBest = s.candidate.id === best.candidate.id;
     let recommendation: RouteOption['recommendation'];
@@ -488,7 +699,7 @@ export function compareRoutes(
       // Never "recommended". A closed route is an alternative the UI flags +
       // blocks from Start, regardless of how fast it is.
       recommendation = 'alternative';
-    } else if (isBest && (!hasClosure || !anyClosureFree)) {
+    } else if (isBest && validatedDefault) {
       recommendation = 'recommended';
     } else if (riskSeverity(s.risk.level) < riskSeverity(best.risk.level)) {
       recommendation = 'lowerRiskAlternative';
@@ -504,7 +715,37 @@ export function compareRoutes(
       candidate: s.candidate,
       risk: s.risk,
       recommendation,
-      reasons: buildReasons(s.risk, recommendation, preference),
+      suggestion: s.risk.dataUnavailable || isDataQualityState(s.risk.level) || (s.risk.level === 'LOW' && !s.risk.exposureVerified)
+        ? 'Flood exposure unknown'
+        : hasNoDetectedFloodExposure(s.risk)
+          ? (isBest && validatedDefault ? 'Shortest ETA / travel time · No detected flood exposure' : 'No detected flood exposure')
+          : `${index === 2 && short && s.candidate.distanceM > short.candidate.distanceM ? 'Longer route' : 'Shorter route'} · ${s.risk.level === 'ELEVATED' ? 'Minimal flood exposure' : 'Flood exposure'}`,
+      reasons: [
+        ...(isBest && validatedDefault ? [{ key: 'time', text: 'Shortest ETA and travel time among routes with no detected flood exposure' }] : []),
+        ...buildReasons(s.risk, recommendation, preference),
+      ],
+    };
+  });
+  const reference = options[0];
+  return options.map((option, i) => {
+    if (i === 0) return option;
+    const sameFloodAssessment = sameRouteFloodAssessment(option, reference);
+    const overlap = compareRoutePaths(option.candidate.route, reference.candidate.route);
+    return {
+      ...option,
+      suggestion: sameFloodAssessment ? (option.risk.exposureVerified ? 'Different roads · Same current flood assessment' : 'Different roads · Flood exposure not fully verified') : option.suggestion,
+      comparison: {
+        referenceLabel: reference.candidate.label,
+        sharedPathPercent: overlap.sharedPathPercent,
+        differentDistanceM: overlap.differentDistanceM,
+        extraDurationS: option.candidate.durationS - reference.candidate.durationS,
+        extraDistanceM: option.candidate.distanceM - reference.candidate.distanceM,
+        sameFloodAssessment,
+      },
+      reasons: [
+        ...option.reasons,
+        ...(sameFloodAssessment ? [{ key: 'equalExposure', text: `No measured flood advantage over ${reference.candidate.label}; an alternative road corridor` }] : []),
+      ],
     };
   });
 }

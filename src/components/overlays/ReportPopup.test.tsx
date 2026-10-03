@@ -72,6 +72,40 @@ describe('ReportPopup — community card (realism pass)', () => {
     expect(screen.queryByTestId('report-actions')).toBeNull();
   });
 
+  it('shows an exact Philippine date/time, severity, location, and source', () => {
+    render(<ReportPopup kind="community" updatedAt={Date.parse('2026-10-03T18:30:00Z') / 1000}
+      source="DEMO — synthetic report" barangay="Barangay 1" severity="SEVERE"
+      depth="ANKLE" passability="NOT_PASSABLE" />);
+    expect(screen.getByTestId('report-date-time')).toHaveTextContent('Oct 4, 2026');
+    expect(screen.getByTestId('report-date-time')).toHaveTextContent('2:30 AM (PHT)');
+    expect(screen.getByTestId('report-date-time').querySelector('time')).toHaveAttribute(
+      'dateTime', '2026-10-03T18:30:00.000Z');
+    expect(screen.getByTestId('report-severity')).toHaveTextContent('Severe flooding');
+    expect(screen.getByTestId('report-barangay')).toHaveTextContent('Barangay 1');
+    expect(screen.getByTestId('report-source')).toHaveTextContent('synthetic report');
+  });
+
+  it('derives severity from observable conditions and falls back for legacy reports', () => {
+    const { rerender } = render(<ReportPopup kind="community" updatedAt={null} source="DEMO"
+      depth="ANKLE" passability="NOT_PASSABLE" />);
+    expect(screen.getByTestId('report-severity')).toHaveTextContent('Severe flooding');
+    expect(screen.getByTestId('report-date-time')).toHaveTextContent('Date and time unavailable');
+    rerender(<ReportPopup kind="community" updatedAt={null} source="DEMO" state="ORANGE" />);
+    expect(screen.getByTestId('report-severity')).toHaveTextContent('Moderate flooding');
+    expect(screen.getByTestId('report-depth')).toHaveTextContent('Depth unknown');
+    expect(screen.getByTestId('report-passability')).toHaveTextContent('Passability unknown');
+  });
+
+  it('keeps historical details and notes visible for resolved reports', () => {
+    render(<ReportPopup kind="community" updatedAt={Date.parse('2026-10-04T00:00:00Z') / 1000}
+      source="DEMO" lifecycle="RESOLVED" severity="MODERATE" depth="KNEE"
+      note="Water receded" />);
+    expect(screen.getByTestId('report-date-time')).toHaveTextContent('Oct 4, 2026');
+    expect(screen.getByTestId('report-severity')).toHaveTextContent('Moderate flooding');
+    expect(screen.getByTestId('report-note')).toHaveTextContent('Water receded');
+    expect(screen.getByTestId('report-status')).toHaveTextContent('Resolved');
+  });
+
   it('official closures keep their distinct label and show no community actions', () => {
     render(
       <ReportPopup

@@ -137,6 +137,7 @@ export function FloodInsights({
 
       <div className="baharoute-insights__head">
         <div>
+          <p className="baharoute-historical-selection__label" role="status">Selected barangay</p>
           <h2 className="baharoute-insights__title" data-testid="insights-barangay">
             {barangayName}
           </h2>

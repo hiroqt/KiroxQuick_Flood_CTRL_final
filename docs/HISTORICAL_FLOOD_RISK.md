@@ -81,8 +81,12 @@ assets.
 ## UI
 
 The **Historical Flood Risk** layer (toggled in the layer drawer) paints
-barangay polygons in a distinct **indigo/violet** ramp (current risk uses a
-green→red ramp), and opens a panel with:
+barangay polygons in a warm hazard ramp: High `#d7303f` (red), Moderate
+`#f07c2a` (orange), Low `#f2c14e` (yellow), Unknown `#b5b8bd` (grey, hatched
+in the legend; never Low). It stays separate from current risk through its own
+feature-state key, legend section, and panel tab. Selecting a City / LGU frames
+the map on that city, paints each of its barangays by class, and leaves
+barangays in other cities uncolored. It also opens a panel with:
 
 - **View by:** NCR · City / LGU · Barangay
 - **City** and **Barangay** selectors
@@ -119,3 +123,17 @@ context/input, not proof of current flooding.
 
 Flood hazard © Project NOAH and contributors, via the bettergovph archive
 (**ODbL**); boundaries © PSA (PSGC) + NAMRIA. See `LICENSE-DATA.md`.
+
+## Map drill-down colors
+
+NCR overview colors all 17 LGUs by the dataset’s derived dominant historical
+risk class. Clicking a city interior or its risk button switches to City view,
+where each barangay uses its own derived class. The same existing yellow (Low),
+orange (Moderate), and red (High) tokens apply to both scopes; gray is Unknown.
+City summary colors do not imply uniform risk across the whole city.
+The Explore panel keeps a text-labeled color key visible in every scope.
+Risk-filtered barangays inside the selected LGU retain readable class colors.
+Neighboring LGUs have no historical risk fill or barangay risk outline.
+
+Selecting a barangay narrows the risk fill and risk labels to that barangay
+only. Returning to City view restores all barangay colors within that LGU.

@@ -164,3 +164,12 @@ describe('fetchDirectionsRoutes (profiles + alternatives)', () => {
     ).toEqual([]);
   });
 });
+
+it('asks driving directions to exclude known flood points but not cycling/walking', async () => {
+  const urls: string[] = [];
+  const fetchImpl: FetchLike = async (url) => { urls.push(url); return jsonFetch({ code: 'Ok', routes: [] })(url); };
+  await fetchDirectionsRoutes(ORIGIN, DEST, 'token', { mode: 'drive', excludePoints: [[121, 14.6]], fetchImpl });
+  expect(new URL(urls[0]).searchParams.get('exclude')).toBe('point(121 14.6)');
+  await fetchDirectionsRoutes(ORIGIN, DEST, 'token', { mode: 'walk', excludePoints: [[121, 14.6]], fetchImpl });
+  expect(new URL(urls[1]).searchParams.has('exclude')).toBe(false);
+});

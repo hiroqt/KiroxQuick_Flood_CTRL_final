@@ -13,6 +13,9 @@ import {
   buildCommunityReportsBadgeLayer,
   buildOfficialClosuresLayer,
   installReportMarkers,
+  installReportPopups,
+  COMMUNITY_REPORTS_LAYER_ID,
+  type ReportPopupMap,
   setCommunityReportsVisibility,
   COMMUNITY_REPORTS_SOURCE_ID,
   COMMUNITY_REPORTS_BADGE_LAYER_ID,
@@ -229,3 +232,31 @@ describe('style-reload safety: re-registering images never duplicates', () => {
   });
 });
 
+
+
+describe('community marker clicks', () => {
+  it('opens the same report details from the pin, badge, and tap target and removes listeners', () => {
+    const handlers = new Map<string, Parameters<ReportPopupMap['on']>[2]>();
+    const off = vi.fn();
+    const canvas = { style: { cursor: '' } };
+    const map: ReportPopupMap = {
+      on: (event, layer, handler) => { handlers.set(`${event}:${layer}`, handler); },
+      off, getCanvas: () => canvas,
+    };
+    const renderPopup = vi.fn();
+    const uninstall = installReportPopups(map, renderPopup);
+    const feature = communityReportsToGeoJSON([rpt('selected', 'WAIST', 'NOT_PASSABLE')]).features[0];
+    const event = { features: [feature], lngLat: { lng: 120.982, lat: 14.598 } };
+    for (const layer of [COMMUNITY_REPORTS_LAYER_ID, COMMUNITY_REPORTS_BADGE_LAYER_ID, COMMUNITY_REPORTS_HITBOX_LAYER_ID]) {
+      handlers.get(`click:${layer}`)!(event);
+      expect(renderPopup).toHaveBeenLastCalledWith(expect.objectContaining({
+        id: 'selected', kind: 'community', severity: 'SEVERE', depth: 'WAIST',
+        passability: 'NOT_PASSABLE', updatedAt: NOW, source: 'DEMO',
+      }), event.lngLat);
+    }
+    handlers.get(`mouseenter:${COMMUNITY_REPORTS_LAYER_ID}`)!(event);
+    expect(canvas.style.cursor).toBe('pointer');
+    uninstall();
+    expect(off).toHaveBeenCalledTimes(handlers.size);
+  });
+});

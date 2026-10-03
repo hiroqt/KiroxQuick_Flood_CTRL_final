@@ -16,6 +16,8 @@ import {
 export const SIM_SPEED_MPS = 30 / 3.6;
 /** Demo playback multiplier. */
 export const SIM_PLAYBACK_RATE = 4;
+export const SIM_PLAYBACK_RATE_OPTIONS = [2, 2.5, 3, 4] as const;
+export type SimPlaybackRate = (typeof SIM_PLAYBACK_RATE_OPTIONS)[number];
 
 export interface DriveFrame {
   position: LngLat;
@@ -46,10 +48,10 @@ export interface DriveSimulatorOptions {
 
 export class DriveSimulator {
   private readonly route: MeasuredRoute;
-  private readonly metersPerMs: number;
+  private metersPerMs: number;
   private readonly scheduler: Scheduler;
   private frameId: number | null = null;
-  private startTime: number | null = null;
+  private lastTime: number | null = null;
 
   constructor(private readonly options: DriveSimulatorOptions) {
     this.route = measureRoute(options.route);
@@ -57,6 +59,12 @@ export class DriveSimulator {
     const rate = options.playbackRate ?? SIM_PLAYBACK_RATE;
     this.metersPerMs = (speed * rate) / 1000;
     this.scheduler = options.scheduler ?? browserScheduler;
+  }
+
+  /** Changes playback speed while preserving the current route position. */
+  setPlaybackRate(rate: number): void {
+    if (!Number.isFinite(rate) || rate <= 0) return;
+    this.metersPerMs = ((this.options.speedMps ?? SIM_SPEED_MPS) * rate) / 1000;
   }
 
   get running(): boolean {
@@ -69,7 +77,7 @@ export class DriveSimulator {
    */
   start(fromM = 0): void {
     this.stop();
-    this.startTime = null;
+    this.lastTime = null;
     this.traveledM = Math.max(0, Math.min(this.route.length, fromM));
     this.emit(this.traveledM);
     this.frameId = this.scheduler.request(this.tick);
@@ -103,13 +111,14 @@ export class DriveSimulator {
     if (!this.paused) return;
     this.paused = false;
     // Re-anchor the clock so time spent paused doesn't count as distance.
-    this.startTime = null;
+    this.lastTime = null;
     this.frameId = this.scheduler.request(this.tick);
   }
 
   private readonly tick = (timeMs: number): void => {
-    if (this.startTime === null) this.startTime = timeMs - this.traveledM / this.metersPerMs;
-    const traveled = Math.min(this.route.length, (timeMs - this.startTime) * this.metersPerMs);
+    const elapsedMs = this.lastTime === null ? 0 : Math.max(0, timeMs - this.lastTime);
+    this.lastTime = timeMs;
+    const traveled = Math.min(this.route.length, this.traveledM + elapsedMs * this.metersPerMs);
     this.traveledM = traveled;
     this.emit(traveled);
     // onFrame may have paused or stopped us; don't schedule another frame.

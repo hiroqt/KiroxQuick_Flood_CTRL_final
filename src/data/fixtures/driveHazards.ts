@@ -9,6 +9,12 @@ import type { FloodState } from '../../types/flood';
 
 export interface DriveHazard {
   id: string;
+  isDemo?: boolean;
+  sourceLabel?: string;
+  /** Actual location for proximity; atM remains the projection along the selected road. */
+  position?: [number, number];
+  /** Explicit simulation-only passability; never a confirmed road closure. */
+  passability?: 'passable' | 'not-passable';
   /** Distance from the route start, meters. */
   atM: number;
   /** Reported current-condition state (never GREEN/"safe" here). */

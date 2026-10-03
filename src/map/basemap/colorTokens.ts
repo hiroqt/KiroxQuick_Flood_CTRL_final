@@ -244,25 +244,41 @@ export const CURRENT_RISK_COLORS: Record<CurrentRiskLevel, ColorToken> = {
 export type HistoricalRiskClassKey = 'Low' | 'Moderate' | 'High' | 'Unknown';
 
 /**
- * HistoricalRiskClass → reserved display color. Intentionally a DIFFERENT hue
- * family from {@link CURRENT_RISK_COLORS} (which is a green→red current-severity
- * ramp) so the two layers never read as the same thing when both are enabled:
- * historical uses a cool INDIGO/VIOLET susceptibility ramp (a common convention
- * for modeled flood-hazard depth), with Unknown a neutral grey.
+ * HistoricalRiskClass → reserved display color. A warm hazard-map ramp
+ * (yellow → orange → red), matching common NCR flood-susceptibility map
+ * conventions. The hexes are deliberately NOT the same as
+ * {@link CURRENT_RISK_COLORS}; the two layers stay independent through separate
+ * feature-state keys, legends, panel tabs, and the "historical, not current
+ * flooding" disclaimer. Current risk additionally has a GREEN low state.
  *
- *   Low       → light indigo
- *   Moderate  → mid indigo
- *   High      → deep violet
- *   Unknown   → neutral grey (no coverage; never "safe")
+ *   Low       → warm yellow / tan
+ *   Moderate  → orange
+ *   High      → red-pink
+ *   Unknown   → neutral grey (no coverage; never "safe", never Low)
  *
  * The colored classes are saturated (> 30%); Unknown is neutral and excluded
  * from the reserved >30% list.
  */
 export const HISTORICAL_RISK_COLORS: Record<HistoricalRiskClassKey, ColorToken> = {
-  Low: token('historicalLow', '#9fa8da'),
-  Moderate: token('historicalModerate', '#5c6bc0'),
-  High: token('historicalHigh', '#3f2b96'),
+  Low: token('historicalLow', '#f2c14e'),
+  Moderate: token('historicalModerate', '#f07c2a'),
+  High: token('historicalHigh', '#d7303f'),
   Unknown: token('historicalUnknown', '#b5b8bd'),
+} as const;
+
+/**
+ * Line/label ink for the historical layer (barangay outlines, city boundaries,
+ * barangay labels). A dark warm neutral that reads on the warm fill ramp.
+ */
+export const HISTORICAL_INK = {
+  /** Barangay dotted outline + selected city boundary. */
+  line: '#5a3a32',
+  /** Base (all-cities) boundary line. */
+  cityLine: '#6b4a40',
+  /** Selected-barangay outline + label text. */
+  strong: '#3a211b',
+  /** Selected-barangay label text (darkest). */
+  strongest: '#2a1712',
 } as const;
 
 /**

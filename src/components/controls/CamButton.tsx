@@ -39,6 +39,8 @@ export interface CameraDetailData {
 export interface CamButtonProps {
   /** Initial open state. Defaults to false. */
   defaultOpen?: boolean;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
   /** Custom loader for Metro Manila cameras (defaults to fetchWindyCameras). */
   loadCameras?: (signal?: AbortSignal) => Promise<readonly MetroManilaTrafficCamera[]>;
   /** Callback when a camera is clicked / selected. */
@@ -75,15 +77,23 @@ async function defaultFetchCameraDetails(
 
 export function CamButton({
   defaultOpen = false,
+  open: controlledOpen,
+  onOpenChange,
   loadCameras,
   onSelectCamera,
   fetchCameraDetails = defaultFetchCameraDetails,
 }: CamButtonProps) {
-  const [open, setOpen] = useState(defaultOpen);
+  const [localOpen, setLocalOpen] = useState(defaultOpen);
+  const open = controlledOpen ?? localOpen;
+  const setOpen = useCallback((next: boolean) => {
+    setLocalOpen(next);
+    onOpenChange?.(next);
+  }, [onOpenChange]);
   const [cameras, setCameras] = useState<readonly MetroManilaTrafficCamera[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [hasLoaded, setHasLoaded] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [selectedCameraId, setSelectedCameraId] = useState<string | null>(null);
   const [cameraData, setCameraData] = useState<Record<string, CameraDetailData>>({});
   const [isMobile, setIsMobile] = useState(() =>
@@ -107,7 +117,7 @@ export function CamButton({
   const close = useCallback((): void => {
     setOpen(false);
     buttonRef.current?.focus();
-  }, []);
+  }, [setOpen]);
 
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>): void => {
     if (event.key === 'Escape' && open) {
@@ -154,10 +164,30 @@ export function CamButton({
     return () => {
       controller.abort();
     };
-  }, [open, hasLoaded]);
+  }, [open, hasLoaded, loadAttempt]);
+
+  // Stop hidden detail work, including loaders that ignore cancellation.
+  useEffect(() => {
+    if (!open) {
+      setSelectedCameraId(null);
+      setCameraData((prev) => Object.fromEntries(
+        Object.entries(prev).map(([id, data]) => [id, data.loading ? { ...data, loading: false } : data]),
+      ));
+    }
+    return () => {
+      activeDetailController.current?.abort();
+      activeDetailController.current = null;
+    };
+  }, [open]);
 
   // Handle clicking a specific camera: fetch its details only on click
   const handleCameraClick = async (camera: MetroManilaTrafficCamera) => {
+    activeDetailController.current?.abort();
+    activeDetailController.current = null;
+    // A canceled request must not leave a thumbnail spinning indefinitely.
+    setCameraData((prev) => Object.fromEntries(
+      Object.entries(prev).map(([id, data]) => [id, data.loading ? { ...data, loading: false } : data]),
+    ));
     const isAlreadySelected = selectedCameraId === camera.sourceId;
     if (isAlreadySelected) {
       setSelectedCameraId(null);
@@ -173,7 +203,6 @@ export function CamButton({
       return;
     }
 
-    activeDetailController.current?.abort();
     const controller = new AbortController();
     activeDetailController.current = controller;
 
@@ -256,7 +285,7 @@ export function CamButton({
               type="button"
               className="baharoute-cam-panel__retry baharoute-focus-ring"
               onClick={() => {
-                setHasLoaded(false);
+                setLoadAttempt((attempt) => attempt + 1);
               }}
             >
               Retry
@@ -433,7 +462,7 @@ export function CamButton({
 
   return (
     <>
-      <div className="baharoute-cambutton-wrapper">
+      <div className="baharoute-cambutton-wrapper" onKeyDown={onKeyDown}>
         <button
           ref={buttonRef}
           type="button"
@@ -443,7 +472,7 @@ export function CamButton({
           title="Metro Manila webcams"
           aria-expanded={open}
           aria-controls={panelId}
-          onClick={() => setOpen((prev) => !prev)}
+          onClick={() => setOpen(!open)}
         >
           <VideoIcon />
         </button>

@@ -8,7 +8,11 @@ import {
   computeEmphasisByBarangay,
   applyHistoricalRiskStates,
   applyHistoricalFilter,
+  applyHistoricalCityScope,
   historicalFillOpacityExpression,
+  historicalFillColorExpression,
+  buildHistoricalSource,
+  HISTORICAL_CLASS_PROP,
   setSelectedHistoricalBarangay,
   barangayBounds,
   cityBounds,
@@ -204,10 +208,14 @@ describe('drill-down emphasis tiers (scope-aware)', () => {
     expect(emphasisFor('a', 'C1', 'Low', f)).toBe('dim');
   });
 
-  it('Barangay view: selected barangay is "focus", siblings "dim", others "out"', () => {
+  it('Barangay view: selected barangay is "focus", siblings and other LGUs are "out"', () => {
     const f = wf({ view: 'barangay', cityPsgc: 'C1', barangayPsgc: 'b1' });
     expect(emphasisFor('b1', 'C1', 'Low', f)).toBe('focus');
-    expect(emphasisFor('b2', 'C1', 'High', f)).toBe('dim');
+    expect(emphasisFor('b2', 'C1', 'High', f)).toBe('out');
+    // Siblings remain uncolored even under a risk filter.
+    expect(
+      emphasisFor('b2', 'C1', 'Low', wf({ view: 'barangay', cityPsgc: 'C1', barangayPsgc: 'b1', risk: 'High' })),
+    ).toBe('out');
     expect(emphasisFor('b3', 'C2', 'High', f)).toBe('out');
   });
 
@@ -239,27 +247,47 @@ describe('drill-down emphasis tiers (scope-aware)', () => {
   });
 });
 
-describe('historical DIM-NOT-HIDE emphasis (fill opacity)', () => {
-  // The fill opacity is a Mapbox `case` expression. We assert its SHAPE encodes
-  // "de-emphasized barangays stay visible (non-zero), not hidden".
-  it('keeps every tier visible (dim/out are low but non-zero, never hidden)', () => {
+describe('historical LGU scope and fill opacity', () => {
+  it('leaves outside LGUs uncolored at every zoom and keeps filtered local risk visible', () => {
     const expr = historicalFillOpacityExpression() as unknown[];
-    expect(expr[0]).toBe('case');
-    const flat = JSON.stringify(expr);
-    // 'out' tier stays faintly visible (0.06), 'dim' 0.12 — never a whole 0 hide.
-    expect(flat).toContain('0.06');
-    expect(flat).toContain('0.12');
-    // No branch value is a literal 0 (dim-not-hide).
-    for (let i = 2; i < expr.length; i += 2) {
-      expect(expr[i]).not.toBe(0);
+    expect(expr.slice(0, 3)).toEqual(['interpolate', ['linear'], ['zoom']]);
+    for (let index = 4; index < expr.length; index += 2) {
+      const atZoom = expr[index] as unknown[];
+      expect(atZoom[3]).toEqual(['==', ['feature-state', HISTORICAL_EMPHASIS_STATE_KEY], 'out']);
+      expect(atZoom[4]).toBe(0);
+      expect(atZoom[6]).toEqual(['case', expect.any(Array), 0.22, 0.42]);
     }
+  });
+
+  it('handles scope updates before the map style has loaded', () => {
+    expect(() => applyHistoricalCityScope({ setFilter: () => { throw new Error('Style is not done loading'); } }, DEFAULT_HISTORICAL_FILTER)).not.toThrow();
+  });
+
+  it('scopes fill and outline to the selected LGU and clears scope on return to NCR', () => {
+    const filters = new Map<string, unknown>();
+    const map = { setFilter: (id: string, scope: unknown) => filters.set(id, scope) };
+    for (const view of ['city', 'barangay'] as const) {
+      applyHistoricalCityScope(map, withFilter({ view, cityPsgc: 'PH1307404' }));
+      expect([...filters.values()]).toEqual([
+        ['==', ['get', 'cityPsgc'], 'PH1307404'],
+        ['==', ['get', 'cityPsgc'], 'PH1307404'],
+      ]);
+    }
+    applyHistoricalCityScope(map, withFilter({ view: 'barangay', cityPsgc: 'PH1307404', barangayPsgc: 'b1' }));
+    expect([...filters.values()]).toEqual(Array(2).fill(
+      ['all', ['==', ['get', 'cityPsgc'], 'PH1307404'], ['==', ['get', 'psgc'], 'b1']],
+    ));
+    applyHistoricalCityScope(map, withFilter({ view: 'city', cityPsgc: 'PH1307404' }));
+    expect([...filters.values()]).toEqual(Array(2).fill(['==', ['get', 'cityPsgc'], 'PH1307404']));
+    applyHistoricalCityScope(map, DEFAULT_HISTORICAL_FILTER);
+    expect([...filters.values()]).toEqual([null, null]);
   });
 
   it('the selected (focus) tier gets the strongest fill', () => {
     const flat = JSON.stringify(historicalFillOpacityExpression());
     expect(flat).toContain('focus');
     expect(flat).toContain('interpolate');
-    expect(flat).toContain('0.62'); // focus low-zoom classified opacity
+    expect(flat).toContain('0.75'); // focus low-zoom classified opacity
   });
 });
 
@@ -463,5 +491,30 @@ describe('label filters', () => {
     const psgc = historicalRiskRecords[0].psgc;
     expect(selectedLabelFilter(psgc)).toEqual(['==', ['get', 'psgc'], psgc]);
     expect(selectedLabelFilter(null)).toEqual(['==', ['get', 'psgc'], '__none__']);
+  });
+});
+
+describe('historical class color does not depend on feature-state timing', () => {
+  it('bakes each barangay class into the source as a property (Unknown when absent)', () => {
+    const src = buildHistoricalSource();
+    expect(src.promoteId).toBe('psgc');
+    expect(src.data.features.length).toBe(1710);
+    for (const f of src.data.features) {
+      const psgc = String(f.properties?.psgc);
+      const expected = historicalRiskByBarangay.get(psgc)?.historicalRiskClass ?? 'Unknown';
+      expect(f.properties?.[HISTORICAL_CLASS_PROP]).toBe(expected);
+    }
+    const addition = src.data.features.find(
+      (f) => f.properties?.name === 'Addition Hills' || f.properties?.brgy === 'Addition Hills',
+    );
+    if (addition) expect(addition.properties?.[HISTORICAL_CLASS_PROP]).toBe('Low');
+  });
+
+  it('fill color + opacity read feature-state first, then the baked property', () => {
+    for (const expr of [historicalFillColorExpression(), historicalFillOpacityExpression()]) {
+      const flat = JSON.stringify(expr);
+      expect(flat).toContain('"coalesce"');
+      expect(flat).toContain(`["get","${HISTORICAL_CLASS_PROP}"]`);
+    }
   });
 });

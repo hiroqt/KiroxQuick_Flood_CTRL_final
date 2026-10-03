@@ -25,7 +25,7 @@ import {
 import { HISTORICAL_RISK_COLORS } from '../../map/basemap/colorTokens';
 import { DistributionBar } from './DistributionBar';
 import { InfoTooltip } from './InfoTooltip';
-import { TOOLTIP_TEXT } from './statusMarks';
+import { historicalMark, TOOLTIP_TEXT } from './statusMarks';
 import { Disclaimer } from '../overlays/Disclaimer';
 
 export interface HistoricalExplorePanelProps {
@@ -36,7 +36,8 @@ export interface HistoricalExplorePanelProps {
   className?: string;
 }
 
-const RISK_OPTIONS: readonly HistoricalRiskFilter[] = ['all', 'Low', 'Moderate', 'High', 'Unknown'];
+const RISK_OPTIONS: readonly HistoricalRiskFilter[] = ['all', 'High', 'Moderate', 'Low', 'Unknown'];
+const RISK_ORDER = { High: 0, Moderate: 1, Low: 2, Unknown: 3 } as const;
 
 /** NCR-wide totals derived once from the static dataset. */
 function ncrTotals() {
@@ -63,9 +64,13 @@ export function HistoricalExplorePanel({
 
   const cityBarangays = useMemo(
     () =>
-      filter.cityPsgc
-        ? historicalRiskRecords.filter((r) => r.cityPsgc === filter.cityPsgc)
-        : historicalRiskRecords,
+      historicalRiskRecords
+        .filter((r) => !filter.cityPsgc || r.cityPsgc === filter.cityPsgc)
+        .sort((a, b) =>
+          RISK_ORDER[a.historicalRiskClass] - RISK_ORDER[b.historicalRiskClass]
+          || a.name.localeCompare(b.name, undefined, { numeric: true })
+          || a.psgc.localeCompare(b.psgc),
+        ),
     [filter.cityPsgc],
   );
 
@@ -75,6 +80,8 @@ export function HistoricalExplorePanel({
 
   const selectedCity =
     filter.cityPsgc != null ? (historicalCitySummaryByPsgc.get(filter.cityPsgc) ?? null) : null;
+  const selectedBarangay =
+    filter.barangayPsgc != null ? (historicalRiskByBarangay.get(filter.barangayPsgc) ?? null) : null;
 
   const distColors = {
     High: HISTORICAL_RISK_COLORS.High.hex,
@@ -89,12 +96,44 @@ export function HistoricalExplorePanel({
       aria-label="Explore historical flood risk"
       data-testid="historical-explore"
     >
-      <h2 className="baharoute-explore__title">
-        Explore historical risk
+      <div className="baharoute-explore__header">
+        <h2 className="baharoute-explore__title">Explore historical risk</h2>
         <InfoTooltip label="About historical flood susceptibility">
           {TOOLTIP_TEXT.historical}
         </InfoTooltip>
-      </h2>
+      </div>
+
+      {(selectedBarangay || selectedCity) && (
+        <div className="baharoute-historical-selection" role="status" data-testid="historical-selected-area">
+          <span className="baharoute-historical-selection__label">{selectedBarangay ? 'Selected barangay' : 'Selected city / LGU'}</span>
+          <strong>{selectedBarangay?.name ?? selectedCity?.cityName}</strong>
+          {selectedBarangay && <span>{selectedBarangay.city}</span>}
+          <span>Historical susceptibility: <strong>{selectedBarangay?.historicalRiskClass ?? selectedCity?.dominantHistoricalRiskClass}</strong></span>
+          {selectedBarangay && onOpenBarangay && (
+            <button type="button" className="baharoute-explore__viewbrgy baharoute-focus-ring"
+              onClick={() => onOpenBarangay(selectedBarangay.psgc)}>
+              View historical details
+            </button>
+          )}
+        </div>
+      )}
+
+      <div className="baharoute-explore__risk-key" aria-label="Historical risk colors">
+        {(['Low', 'Moderate', 'High', 'Unknown'] as const).map((risk) => (
+          <span key={risk}>
+            <span className="baharoute-explore__brgy-swatch" aria-hidden="true"
+              style={{ backgroundColor: HISTORICAL_RISK_COLORS[risk].hex }} />
+            {risk === 'Unknown' ? 'Unknown / no data' : `${risk} risk`}
+          </span>
+        ))}
+      </div>
+      <p className="baharoute-explore__summary-sub">
+        {filter.view === 'barangay' && filter.barangayPsgc
+          ? 'Only the selected barangay is colored. Other barangays and LGUs are uncolored.'
+          : filter.view === 'ncr' || !filter.cityPsgc
+          ? 'City colors show the dominant historical risk. Select a city to see each barangay’s risk.'
+          : 'Each barangay keeps its own historical risk color. Only the selected city / LGU is colored.'}
+      </p>
 
       {/* Breadcrumb drill-down: NCR > City > Barangay. Parent levels reset the
           scope when clicked (full visual reset for NCR). */}
@@ -185,10 +224,29 @@ export function HistoricalExplorePanel({
               <option value="">Select barangay</option>
               {cityBarangays.map((b) => (
                 <option key={b.psgc} value={b.psgc}>
-                  {b.name}
+                  {/* Native <option> can't hold colored markup, so the class is
+                      carried by a shape glyph + text (never color alone). */}
+                  {historicalMark(b.historicalRiskClass)} {b.name} — {b.historicalRiskClass}
                 </option>
               ))}
             </select>
+            {selectedBarangay && (
+              <p
+                className="baharoute-explore__brgy-risk"
+                data-testid="explore-barangay-risk"
+                role="status"
+              >
+                <span
+                  className="baharoute-explore__brgy-swatch"
+                  aria-hidden="true"
+                  style={{ background: HISTORICAL_RISK_COLORS[selectedBarangay.historicalRiskClass].hex }}
+                />
+                <span>
+                  {selectedBarangay.name}: <strong>{selectedBarangay.historicalRiskClass}</strong>{' '}
+                  historical susceptibility
+                </span>
+              </p>
+            )}
           </>
         )}
 
@@ -260,11 +318,30 @@ export function HistoricalExplorePanel({
         </div>
       )}
 
+      {filter.view === 'ncr' && (
+        <div className="baharoute-explore__city-list" aria-label="NCR city historical risks">
+          {historicalCitySummaries.map((city) => (
+            <button key={city.cityPsgc} type="button"
+              className="baharoute-explore__city-risk baharoute-focus-ring"
+              onClick={() => set({ view: 'city', cityPsgc: city.cityPsgc, barangayPsgc: null })}>
+              <span className="baharoute-explore__brgy-swatch" aria-hidden="true"
+                style={{ backgroundColor: HISTORICAL_RISK_COLORS[city.dominantHistoricalRiskClass].hex }} />
+              <span>{city.cityName}</span>
+              <strong>{city.dominantHistoricalRiskClass}</strong>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* City / LGU summary. */}
       {filter.view !== 'ncr' && selectedCity && (
         <div className="baharoute-explore__summary" data-testid="explore-city-summary">
           <p className="baharoute-explore__summary-title">{selectedCity.cityName}</p>
-          <p className="baharoute-explore__summary-sub">Historical flood exposure</p>
+          <p className="baharoute-explore__brgy-risk">
+            <span className="baharoute-explore__brgy-swatch" aria-hidden="true"
+              style={{ backgroundColor: HISTORICAL_RISK_COLORS[selectedCity.dominantHistoricalRiskClass].hex }} />
+            Dominant city risk: <strong>{selectedCity.dominantHistoricalRiskClass}</strong>
+          </p>
           <DistributionBar
             segments={[
               { key: 'h', label: 'High', count: selectedCity.highCount, color: distColors.High },

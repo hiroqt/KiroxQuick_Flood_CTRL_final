@@ -126,12 +126,14 @@ export const DRIVE_3D_RADIUS_M: DriveRadius = 600;
 export interface DriveMarker {
   position: [number, number];
   color: string;
+  label?: string;
 }
 
 /** One candidate route for the pre-drive preview (id + ordered [lng,lat]). */
 export interface PreviewRoute {
   id: string;
   geometry: ReadonlyArray<[number, number]>;
+  markers?: ReadonlyArray<DriveMarker>;
 }
 /** Move the radius clip only after the vehicle travels this far. */
 export const DRIVE_RADIUS_UPDATE_M = 150;
@@ -149,8 +151,12 @@ const PREVIEW_ALT_SOURCE = 'route-preview-alt';
 const PREVIEW_ALT_LAYER = 'route-preview-alt-line';
 const PREVIEW_SEL_SOURCE = 'route-preview-selected';
 const PREVIEW_SEL_LAYER = 'route-preview-selected-line';
+const PREVIEW_SEL_CASING = 'route-preview-selected-casing';
 const PREVIEW_ENDS_SOURCE = 'route-preview-ends';
 const PREVIEW_ENDS_LAYER = 'route-preview-ends-dot';
+const PREVIEW_FLOODS_SOURCE = 'route-preview-floods';
+const PREVIEW_FLOODS_LAYER = 'route-preview-floods-dot';
+const PREVIEW_FLOODS_LABEL = 'route-preview-floods-label';
 /** Accent for the selected/recommended preview route (matches drive accent). */
 const PREVIEW_SELECTED_COLOR = '#1a56db';
 /** Muted color for alternative preview routes. */
@@ -161,6 +167,7 @@ const DRIVE_RADIUS_SOURCE = 'drive-3d-radius-mask';
 const DRIVE_RADIUS_LAYER = 'drive-3d-radius-clip';
 const DRIVE_MARKERS_SOURCE = 'drive-markers';
 const DRIVE_MARKERS_LAYER = 'drive-markers-dot';
+const DRIVE_MARKERS_LABEL = 'drive-markers-label';
 
 /** One simulated vehicle update. */
 export interface DriveUpdate {
@@ -608,7 +615,7 @@ export class MapManager {
               type: 'FeatureCollection',
               features: markers.map((mk) => ({
                 ...pointFeature(mk.position),
-                properties: { color: mk.color },
+                properties: { color: mk.color, label: mk.label ?? '' },
               })),
             },
           });
@@ -627,6 +634,7 @@ export class MapManager {
             },
           });
         }
+        if (markers.length > 0) this.addDemoMarkerLabels(DRIVE_MARKERS_LABEL, DRIVE_MARKERS_SOURCE);
         map.addSource(DRIVE_CAR_SOURCE, { type: 'geojson', data: pointFeature(route[0]) });
         map.addLayer({
           id: DRIVE_CAR_LAYER,
@@ -685,7 +693,7 @@ export class MapManager {
     }
   }
 
-  /** Replaces the drawn route line (e.g. after a reroute). */
+  /** Replaces the route line while keeping flood markers at their reported locations. */
   setDriveRoute(route: ReadonlyArray<[number, number]>): void {
     if (this.preDrive3D === null) return;
     try {
@@ -710,6 +718,7 @@ export class MapManager {
     try {
       for (const id of [
         DRIVE_CAR_LAYER,
+        DRIVE_MARKERS_LABEL,
         DRIVE_MARKERS_LAYER,
         DRIVE_RADIUS_LAYER,
         DRIVE_ROUTE_LAYER,
@@ -910,24 +919,32 @@ export class MapManager {
       map.addLayer({
         id: PREVIEW_ALT_LAYER,
         type: 'line',
-        slot: 'middle',
+        slot: 'top',
         source: PREVIEW_ALT_SOURCE,
         layout: { 'line-cap': 'round', 'line-join': 'round' },
         // A slightly wider transparent hit area is not needed; the 5px line is
         // clickable. Keep the muted styling so the selected line dominates.
-        paint: { 'line-color': PREVIEW_ALT_COLOR, 'line-width': 5, 'line-opacity': 0.45 },
+        paint: { 'line-color': PREVIEW_ALT_COLOR, 'line-width': 6, 'line-opacity': 0.8 },
       });
       map.addSource(PREVIEW_SEL_SOURCE, {
         type: 'geojson',
         data: { type: 'FeatureCollection', features: [] },
       });
       map.addLayer({
-        id: PREVIEW_SEL_LAYER,
+        id: PREVIEW_SEL_CASING,
         type: 'line',
-        slot: 'middle',
+        slot: 'top',
         source: PREVIEW_SEL_SOURCE,
         layout: { 'line-cap': 'round', 'line-join': 'round' },
-        paint: { 'line-color': PREVIEW_SELECTED_COLOR, 'line-width': 7, 'line-opacity': 0.95 },
+        paint: { 'line-color': '#ffffff', 'line-width': 12, 'line-opacity': 1 },
+      });
+      map.addLayer({
+        id: PREVIEW_SEL_LAYER,
+        type: 'line',
+        slot: 'top',
+        source: PREVIEW_SEL_SOURCE,
+        layout: { 'line-cap': 'round', 'line-join': 'round' },
+        paint: { 'line-color': PREVIEW_SELECTED_COLOR, 'line-width': 8, 'line-opacity': 1 },
       });
       map.addSource(PREVIEW_ENDS_SOURCE, {
         type: 'geojson',
@@ -948,6 +965,15 @@ export class MapManager {
           'circle-stroke-width': 3,
         },
       });
+      map.addSource(PREVIEW_FLOODS_SOURCE, {
+        type: 'geojson', data: { type: 'FeatureCollection', features: [] },
+      });
+      map.addLayer({
+        id: PREVIEW_FLOODS_LAYER, type: 'circle', slot: 'top', source: PREVIEW_FLOODS_SOURCE,
+        paint: { 'circle-radius': 10, 'circle-color': ['get', 'color'],
+          'circle-stroke-color': '#ffffff', 'circle-stroke-width': 2 },
+      });
+      this.addDemoMarkerLabels(PREVIEW_FLOODS_LABEL, PREVIEW_FLOODS_SOURCE);
       this.routePreviewActive = true;
       this.updateRoutePreviewSelection(routes, selectedId);
       this.frameRoutePreview(routes, ends);
@@ -962,13 +988,20 @@ export class MapManager {
    */
   updateRoutePreviewSelection(routes: ReadonlyArray<PreviewRoute>, selectedId: string): void {
     if (!this.routePreviewActive) return;
-    const selected = routes.find((r) => r.id === selectedId) ?? routes[0];
-    if (!selected) return;
-    const alternatives = routes.filter((r) => r.id !== selected.id);
+    const selected = routes.find((r) => r.id === selectedId);
+    const alternatives = routes.filter((r) => r.id !== selected?.id);
     try {
-      this.setPreviewLine(PREVIEW_SEL_SOURCE, [
+      const floodSource = this.map?.getSource?.(PREVIEW_FLOODS_SOURCE) as { setData?: (data: unknown) => void } | undefined;
+      floodSource?.setData?.({
+        type: 'FeatureCollection',
+        features: (selected?.markers ?? []).map((marker) => ({
+          ...pointFeature(marker.position),
+          properties: { color: marker.color, label: marker.label ?? '' },
+        })),
+      });
+      this.setPreviewLine(PREVIEW_SEL_SOURCE, selected ? [
         { id: selected.id, coords: selected.geometry },
-      ]);
+      ] : []);
       this.setPreviewLine(
         PREVIEW_ALT_SOURCE,
         alternatives.map((r) => ({ id: r.id, coords: r.geometry })),
@@ -1021,16 +1054,25 @@ export class MapManager {
     const map = this.map;
     if (!map) return;
     try {
-      for (const id of [PREVIEW_ENDS_LAYER, PREVIEW_SEL_LAYER, PREVIEW_ALT_LAYER]) {
+      for (const id of [PREVIEW_FLOODS_LABEL, PREVIEW_FLOODS_LAYER, PREVIEW_ENDS_LAYER, PREVIEW_SEL_LAYER, PREVIEW_SEL_CASING, PREVIEW_ALT_LAYER]) {
         if (map.getLayer?.(id)) map.removeLayer?.(id);
       }
-      for (const id of [PREVIEW_ENDS_SOURCE, PREVIEW_SEL_SOURCE, PREVIEW_ALT_SOURCE]) {
+      for (const id of [PREVIEW_FLOODS_SOURCE, PREVIEW_ENDS_SOURCE, PREVIEW_SEL_SOURCE, PREVIEW_ALT_SOURCE]) {
         if (map.getSource?.(id)) map.removeSource?.(id);
       }
     } catch {
       // Best-effort cleanup.
     }
     this.routePreviewActive = false;
+  }
+
+  private addDemoMarkerLabels(id: string, source: string): void {
+    this.map?.addLayer?.({
+      id, source, type: 'symbol', slot: 'top',
+      layout: { 'text-field': ['get', 'label'], 'text-size': 12,
+        'text-anchor': 'top', 'text-offset': [0, 1.2], 'text-allow-overlap': true },
+      paint: { 'text-color': '#172554', 'text-halo-color': '#ffffff', 'text-halo-width': 2 },
+    });
   }
 
   /** True while the route preview overlays are shown. */

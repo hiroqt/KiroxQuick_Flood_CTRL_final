@@ -94,6 +94,36 @@ describe('DriveSimulator', () => {
     expect(sim.running).toBe(false);
   });
 
+  it('switches playback rates without jumping or counting paused time', () => {
+    const { scheduler, step } = manualScheduler();
+    const onFrame = vi.fn();
+    const sim = new DriveSimulator({
+      route: PITX_TO_MOA_ROUTE,
+      speedMps: 10,
+      playbackRate: 4,
+      onFrame,
+      scheduler,
+    });
+    sim.start();
+    step(0);
+    step(1000);
+    let expectedM = 40;
+    for (const [index, rate] of [2, 2.5, 3, 4].entries()) {
+      sim.setPlaybackRate(rate);
+      expect(onFrame.mock.lastCall?.[0].traveledM).toBeCloseTo(expectedM);
+      step((index + 2) * 1000);
+      expectedM += 10 * rate;
+      expect(onFrame.mock.lastCall?.[0].traveledM).toBeCloseTo(expectedM);
+    }
+    sim.pause();
+    sim.setPlaybackRate(2.5);
+    sim.resume();
+    step(100_000);
+    expect(onFrame.mock.lastCall?.[0].traveledM).toBeCloseTo(expectedM);
+    step(101_000);
+    expect(onFrame.mock.lastCall?.[0].traveledM).toBeCloseTo(expectedM + 25);
+  });
+
   it('keeps every simulated position ON the active route LineString', () => {
     // Route-following invariant: the interpolated position at each frame must
     // lie on the same geometry the map draws (offset ~0), so the vehicle never

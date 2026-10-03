@@ -21,7 +21,7 @@ describe('computeNavState', () => {
     expect(s.remainingS).toBe(PITX_TO_MOA_DISTANCE_M / 10);
   });
 
-  it('warns about a hazard only within 1 km ahead', () => {
+  it('warns about a hazard only within 900 m ahead', () => {
     const [first] = PITX_TO_MOA_HAZARDS;
     expect(nav(first.atM - 1500).hazard).toBeNull();
     const s = nav(first.atM - 400);

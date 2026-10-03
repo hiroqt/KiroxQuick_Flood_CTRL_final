@@ -790,6 +790,34 @@ describe('MapManager drive view', () => {
     mgr.destroy();
   });
 
+  it('keeps flood markers and labels at their original locations across reroutes', () => {
+    const { m, mgr, layers, sources } = initDriveFake();
+    const markers = [
+      { position: [120.99, 14.516] as [number, number], color: '#cc0000', label: 'DEMO · Not passable' },
+      { position: [120.99, 14.518] as [number, number], color: '#ffcc00', label: 'DEMO · Passable' },
+    ];
+    mgr.startDriveView(route, markers);
+    const markerSource = sources.get('drive-markers')!;
+    expect(m.addSource).toHaveBeenCalledWith('drive-markers', expect.objectContaining({
+      data: expect.objectContaining({
+        features: markers.map((marker) => expect.objectContaining({
+          geometry: { type: 'Point', coordinates: marker.position },
+          properties: { color: marker.color, label: marker.label },
+        })),
+      }),
+    }));
+    const alternative: [number, number][] = [[120.99, 14.515], [121, 14.52]];
+    mgr.setDriveRoute(alternative);
+    mgr.updateDrive({ position: alternative[0], bearing: 45 });
+    mgr.setDriveRoute([[121, 14.517], [121, 14.52]]);
+    expect(sources.get('drive-route')?.setData).toHaveBeenCalledTimes(2);
+    expect(markerSource.setData).not.toHaveBeenCalled();
+    expect(sources.get('drive-markers')).toBe(markerSource);
+    expect(layers.has('drive-markers-dot')).toBe(true);
+    expect(layers.has('drive-markers-label')).toBe(true);
+    mgr.destroy();
+  });
+
   it('endDriveView removes overlays and restores trees + 2D', () => {
     const { m, mgr, layers, sources } = initDriveFake();
     mgr.startDriveView(route);
@@ -961,5 +989,73 @@ describe('MapManager.onRoutePreviewSelect (map-line selection)', () => {
     // Before init the map is null → returns a no-op teardown, never throws.
     const teardown = mgr.onRoutePreviewSelect(vi.fn());
     expect(() => teardown()).not.toThrow();
+  });
+});
+
+
+describe('route preview visibility and selection', () => {
+  it('draws the selected route above alternatives and switches its geometry', () => {
+    const { map, factory } = makeFake();
+    const sources = new Map<string, { setData: ReturnType<typeof vi.fn> }>();
+    const layers = new Map<string, unknown>();
+    const addLayer = vi.fn((layer: { id: string }) => layers.set(layer.id, layer));
+    Object.assign(map, {
+      addSource: (id: string) => sources.set(id, { setData: vi.fn() }),
+      getSource: (id: string) => sources.get(id),
+      removeSource: (id: string) => sources.delete(id),
+      addLayer,
+      getLayer: (id: string) => layers.get(id),
+      removeLayer: (id: string) => layers.delete(id),
+    });
+    const mgr = new MapManager();
+    mgr.init({ container: document.createElement('div'), config: CONFIG, mapFactory: factory });
+    const routes = [
+      { id: 'a', geometry: [[121, 14.6], [121.05, 14.62]] as [number, number][] },
+      { id: 'b', geometry: [[121, 14.6], [121.02, 14.62], [121.05, 14.62]] as [number, number][],
+        markers: [
+          { position: [121.01, 14.61] as [number, number], color: '#ffff00', label: 'DEMO · Passable' },
+          { position: [121.04, 14.62] as [number, number], color: '#ff0000', label: 'DEMO · Not passable' },
+        ] },
+    ];
+    mgr.showRoutePreview(routes, 'a', [[121, 14.6], [121.05, 14.62]]);
+    expect(layers.get('route-preview-selected-line')).toMatchObject({
+      slot: 'top', paint: { 'line-color': '#1a56db', 'line-width': 8, 'line-opacity': 1 },
+    });
+    expect(layers.get('route-preview-selected-casing')).toMatchObject({
+      source: 'route-preview-selected', paint: { 'line-color': '#ffffff', 'line-width': 12 },
+    });
+    mgr.updateRoutePreviewSelection(routes, 'b');
+    expect(sources.get('route-preview-floods')?.setData).toHaveBeenLastCalledWith({
+      type: 'FeatureCollection', features: routes[1].markers!.map((marker) => expect.objectContaining({
+        geometry: { type: 'Point', coordinates: marker.position },
+        properties: { color: marker.color, label: marker.label },
+      })),
+    });
+    expect(layers.has('route-preview-floods-label')).toBe(true);
+    expect(sources.get('route-preview-selected')?.setData).toHaveBeenLastCalledWith({
+      type: 'FeatureCollection', features: [expect.objectContaining({
+        properties: { routeId: 'b' }, geometry: { type: 'LineString', coordinates: routes[1].geometry },
+      })],
+    });
+    expect(sources.get('route-preview-alt')?.setData).toHaveBeenLastCalledWith({
+      type: 'FeatureCollection', features: [expect.objectContaining({ properties: { routeId: 'a' } })],
+    });
+    mgr.updateRoutePreviewSelection(routes, '');
+    expect(sources.get('route-preview-floods')?.setData).toHaveBeenLastCalledWith({ type: 'FeatureCollection', features: [] });
+    expect(sources.get('route-preview-selected')?.setData).toHaveBeenLastCalledWith({
+      type: 'FeatureCollection', features: [],
+    });
+    expect(sources.get('route-preview-alt')?.setData).toHaveBeenLastCalledWith({
+      type: 'FeatureCollection', features: expect.arrayContaining([
+        expect.objectContaining({ properties: { routeId: 'a' } }),
+        expect.objectContaining({ properties: { routeId: 'b' } }),
+      ]),
+    });
+    mgr.clearRoutePreview();
+    expect(layers.has('route-preview-selected-casing')).toBe(false);
+    expect(sources.has('route-preview-selected')).toBe(false);
+    expect(sources.has('route-preview-floods')).toBe(false);
+    expect(layers.has('route-preview-floods-label')).toBe(false);
+    mgr.destroy();
   });
 });

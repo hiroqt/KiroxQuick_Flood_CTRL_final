@@ -10,6 +10,8 @@
 // and the DemoDataBadge shows when demo layers are present (Req 15.2).
 
 import { act } from 'react';
+import * as rerouteService from '../services/floodAvoidingReroute';
+import { SIM_SPEED_MPS, SIM_PLAYBACK_RATE, type DriveFrame } from '../simulation/DriveSimulator';
 import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { MapView, type MapManagerLike } from './MapView';
@@ -509,6 +511,31 @@ describe('MapView — route preview (auto lines + selection + Start)', () => {
     await user.click(screen.getByText(/Mall of Asia/));
   }
 
+  it('Back stays on location selection with saved endpoints until Choose routes is pressed', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup();
+    const { manager, showRoutePreview, clearRoutePreview } = makeFakeManager();
+    render(<MapView config={CONFIG} createMapManager={() => manager} />);
+    await pickPitxToMoa(user);
+    await screen.findByTestId('route-compare-panel');
+    await user.click(screen.getByRole('button', { name: 'Back to search' }));
+    expect(screen.getByTestId('route-search-panel')).toBeVisible();
+    expect(screen.queryByTestId('route-compare-panel')).toBeNull();
+    expect(screen.getByTestId('search-field-origin')).toHaveTextContent(/PITX/);
+    expect(screen.getByTestId('search-field-destination')).toHaveTextContent(/Mall of Asia/);
+    expect(clearRoutePreview).toHaveBeenCalled();
+    expect(showRoutePreview).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole('button', { name: 'Choose routes' }));
+    expect(await screen.findByTestId('route-compare-panel')).toBeVisible();
+    expect(showRoutePreview).toHaveBeenCalledTimes(2);
+    await user.click(screen.getByRole('button', { name: 'Back to search' }));
+    await user.click(screen.getByRole('button', { name: 'Clear destination' }));
+    await user.click(screen.getByLabelText('To'));
+    await user.type(screen.getByLabelText('To'), 'Mall of Asia');
+    await user.click(screen.getByText(/Mall of Asia/));
+    expect(await screen.findByTestId('route-compare-panel')).toBeVisible();
+    expect(showRoutePreview).toHaveBeenCalledTimes(3);
+  });
+
   it('draws the route preview on the map automatically and previews (not Driver Mode)', async () => {
     const { default: userEvent } = await import('@testing-library/user-event');
     const user = userEvent.setup();
@@ -522,7 +549,10 @@ describe('MapView — route preview (auto lines + selection + Start)', () => {
     expect(showRoutePreview).toHaveBeenCalledTimes(1);
     // Called with the candidate routes, a selected id, and the O/D endpoints.
     const [routes, selectedId, ends] = showRoutePreview.mock.calls[0];
-    expect(routes.length).toBeGreaterThan(0);
+    expect(routes).toHaveLength(3);
+    expect(selectedId).toBe('pitx-moa-lowrisk');
+    expect(screen.queryByTestId('default-route-unavailable')).not.toBeInTheDocument();
+    expect(screen.getByTestId('start-route-button')).toBeEnabled();
     expect(typeof selectedId).toBe('string');
     expect(ends).toHaveLength(2);
     // Still a preview — Driver Mode HUD is not shown.
@@ -538,12 +568,144 @@ describe('MapView — route preview (auto lines + selection + Start)', () => {
     await pickPitxToMoa(user);
     await screen.findByTestId('route-compare-panel');
 
-    // The PITX→MOA demo yields two routes; select the alternative.
-    await user.click(screen.getByTestId('route-card-pitx-moa-lowrisk'));
+    // Select the third suggestion and verify the map follows that choice.
+    await user.click(screen.getByTestId('route-card-pitx-moa-longer'));
     expect(updateRoutePreviewSelection).toHaveBeenCalled();
     const calls = updateRoutePreviewSelection.mock.calls;
     const lastCall = calls[calls.length - 1];
-    expect(lastCall[1]).toBe('pitx-moa-lowrisk');
+    expect(lastCall[1]).toBe('pitx-moa-longer');
+  });
+
+  it.each([
+    ['pitx-moa-primary', -800], ['pitx-moa-lowrisk', -800], ['pitx-moa-longer', -800],
+  ] as const)('keeps route %s moving and shows alternative selection at offset %s meters', async (routeId, offset) => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    const { manager, showRoutePreview } = makeFakeManager();
+    manager.startDriveView = vi.fn();
+    manager.updateDrive = vi.fn();
+    let callback: FrameRequestCallback | undefined;
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      callback = cb;
+      return 1;
+    });
+    const request = vi.spyOn(rerouteService, 'findFloodAvoidingReroutes').mockResolvedValue([]);
+    const { unmount } = render(<MapView config={CONFIG} createMapManager={() => manager} />);
+    try {
+      await pickPitxToMoa(user);
+      await screen.findByTestId('route-compare-panel');
+      await user.click(screen.getByTestId(`route-card-${routeId}`));
+      await user.click(screen.getByTestId('start-route-button'));
+      const route = showRoutePreview.mock.calls[0][0].find((r: { id: string }) => r.id === routeId);
+      act(() => callback?.(0));
+      const { planRoutes } = await import('../services/routePlanning');
+      const { collectRouteFloods, floodHazardsOnRoute } = await import('../services/routeFloodHazards');
+      const candidates = await planRoutes(route.geometry[0], route.geometry[route.geometry.length - 1]);
+      const hazard = floodHazardsOnRoute(route.geometry, collectRouteFloods(candidates))[0];
+      expect(hazard).toBeDefined();
+      if (hazard.atM > 1200) {
+        await act(async () => callback?.((hazard.atM - 1200) / (SIM_SPEED_MPS * SIM_PLAYBACK_RATE) * 1000));
+        expect(request).toHaveBeenCalled();
+        if (routeId === 'pitx-moa-primary') expect(screen.queryByRole('alertdialog')).toBeNull();
+      }
+      await act(async () => callback?.((hazard.atM + offset) / (SIM_SPEED_MPS * SIM_PLAYBACK_RATE) * 1000));
+      expect(screen.getByRole('alertdialog')).toHaveTextContent('Demo flood —');
+      const attemptsAtAlert = request.mock.calls.length;
+      expect(attemptsAtAlert).toBeGreaterThanOrEqual(1);
+      expect(screen.getByText(/No joinable flood-avoiding road route found/)).toBeInTheDocument();
+      const callsWhilePaused = raf.mock.calls.length;
+      expect(screen.getByRole('group', { name: 'Route options' })).toBeInTheDocument();
+      const framesBefore = vi.mocked(manager.updateDrive!).mock.calls.length;
+      act(() => callback?.((hazard.atM + offset + 100) / (SIM_SPEED_MPS * SIM_PLAYBACK_RATE) * 1000));
+      expect(vi.mocked(manager.updateDrive!).mock.calls.length).toBeGreaterThan(framesBefore);
+      await user.click(screen.getByRole('button', { name: /Find alternative routes/ }));
+      expect(raf.mock.calls.length).toBeGreaterThan(callsWhilePaused);
+      expect(request).toHaveBeenCalledTimes(attemptsAtAlert + 1);
+      await act(async () => callback?.((hazard.atM + offset + 300) / (SIM_SPEED_MPS * SIM_PLAYBACK_RATE) * 1000));
+      expect(request).toHaveBeenCalledTimes(attemptsAtAlert + 2);
+      await user.click(screen.getByRole('button', { name: /Back to route selection/ }));
+      expect(await screen.findByTestId('route-compare-panel')).toBeInTheDocument();
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+      expect(screen.getByTestId('route-card-pitx-moa-primary')).toBeInTheDocument();
+      expect(screen.getByTestId('route-card-pitx-moa-lowrisk')).toBeInTheDocument();
+      expect(screen.getByTestId('route-card-pitx-moa-longer')).toBeInTheDocument();
+      expect(showRoutePreview.mock.lastCall?.[1]).toBe(routeId);
+      expect(showRoutePreview.mock.lastCall?.[0]).toHaveLength(3);
+    } finally {
+      unmount();
+      raf.mockRestore();
+      request.mockRestore();
+    }
+  });
+
+  it.each(['pitx-moa-primary', 'pitx-moa-longer'])('shows an avoiding road for %s at 900 m while provider search is pending', async (routeId) => {
+    const user = (await import('@testing-library/user-event')).default.setup();
+    const { manager, showRoutePreview } = makeFakeManager();
+    manager.startDriveView = vi.fn();
+    manager.updateDrive = vi.fn();
+    manager.setDriveRoute = vi.fn();
+    let callback: FrameRequestCallback | undefined;
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => { callback = cb; return 1; });
+    const request = vi.spyOn(rerouteService, 'findFloodAvoidingReroutes').mockImplementation(() => new Promise(() => {}));
+    const { unmount } = render(<MapView config={CONFIG} createMapManager={() => manager} />);
+    try {
+      await pickPitxToMoa(user);
+      await screen.findByTestId('route-compare-panel');
+      await user.click(screen.getByTestId(`route-card-${routeId}`));
+      await user.click(screen.getByTestId('start-route-button'));
+      const route = showRoutePreview.mock.calls[0][0].find((r: { id: string }) => r.id === routeId);
+      const { planRoutes } = await import('../services/routePlanning');
+      const { collectRouteFloods, floodHazardsOnRoute } = await import('../services/routeFloodHazards');
+      const candidates = await planRoutes(route.geometry[0], route.geometry[route.geometry.length - 1]);
+      const floods = collectRouteFloods(candidates);
+      const hazard = floodHazardsOnRoute(route.geometry, floods).find((h) => h.passability === 'not-passable')!;
+      act(() => callback?.(0));
+      await act(async () => callback?.((hazard.atM - 1200) / (SIM_SPEED_MPS * SIM_PLAYBACK_RATE) * 1000));
+      await act(async () => callback?.((hazard.atM - 900) / (SIM_SPEED_MPS * SIM_PLAYBACK_RATE) * 1000));
+      expect(screen.getByRole('alertdialog')).toHaveTextContent('not passable');
+      await user.click(screen.getByRole('button', { name: /Fastest available flood-avoiding route/ }));
+      expect(manager.setDriveRoute).toHaveBeenCalledOnce();
+      expect(rerouteService.avoidsFloodPoints(vi.mocked(manager.setDriveRoute!).mock.calls[0][0], floods.map((f) => f.position))).toBe(true);
+      expect(screen.queryByRole('alertdialog')).toBeNull();
+    } finally {
+      unmount(); raf.mockRestore(); request.mockRestore();
+    }
+  });
+
+  it('changes driving playback speed from the HUD without resetting progress', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    const { manager } = makeFakeManager();
+    manager.startDriveView = vi.fn();
+    manager.updateDrive = vi.fn();
+    let callback: FrameRequestCallback | undefined;
+    const raf = vi.spyOn(window, 'requestAnimationFrame').mockImplementation((cb) => {
+      callback = cb;
+      return 1;
+    });
+    const { unmount } = render(<MapView config={CONFIG} createMapManager={() => manager} />);
+    try {
+      await pickPitxToMoa(user);
+      await screen.findByTestId('route-compare-panel');
+      await user.click(screen.getByTestId('start-route-button'));
+      expect(screen.getByRole('button', { name: 'Simulation speed 4×' }))
+        .toHaveAttribute('aria-pressed', 'true');
+      act(() => callback?.(0));
+      act(() => callback?.(1000));
+      let expectedM = SIM_SPEED_MPS * 4;
+      for (const [index, rate] of [2, 2.5, 3, 4].entries()) {
+        const button = screen.getByRole('button', { name: `Simulation speed ${rate}×` });
+        await user.click(button);
+        expect(button).toHaveAttribute('aria-pressed', 'true');
+        act(() => callback?.((index + 2) * 1000));
+        expectedM += SIM_SPEED_MPS * rate;
+        expect((vi.mocked(manager.updateDrive!).mock.lastCall?.[0] as DriveFrame).traveledM)
+          .toBeCloseTo(expectedM);
+      }
+    } finally {
+      unmount();
+      raf.mockRestore();
+    }
   });
 
   it('Start clears the preview and enters Driver Mode with the selected route', async () => {
@@ -761,7 +923,7 @@ describe('Community Report V2 — report-mode / lifecycle UX (Phase 1 fixes)', (
     const user = userEvent.setup();
     const { manager } = makeFakeManager();
     render(<MapView config={CONFIG} createMapManager={() => manager} />);
-    const reportBtn = screen.getByRole('button', { name: /report flooding/i });
+    const reportBtn = screen.getByTestId('map-mode-community');
     await user.click(reportBtn);
     return { user };
   }
@@ -784,7 +946,99 @@ describe('Community Report V2 — report-mode / lifecycle UX (Phase 1 fixes)', (
   it('toggling report mode off hides the banner again', async () => {
     const { user } = await enterReportMode();
     expect(screen.getByTestId('report-mode-banner')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: /report flooding/i }));
+    await user.click(screen.getByTestId('map-mode-route'));
     expect(screen.queryByTestId('report-mode-banner')).toBeNull();
+  });
+});
+
+describe('MapView — Route / Community / Historical navigation', () => {
+  it('switches between exclusive surfaces and returns to route planning', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    const { manager } = makeFakeManager();
+    render(<MapView config={CONFIG} createMapManager={() => manager} />);
+
+    expect(screen.getByTestId('map-mode-route')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('route-search-panel')).toBeVisible();
+
+    await user.click(screen.getByTestId('map-mode-community'));
+    expect(screen.getByTestId('map-mode-community')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('report-mode-banner')).toBeVisible();
+    expect(screen.queryByTestId('route-search-panel')).toBeNull();
+    expect(screen.queryByTestId('historical-evidence-panel')).toBeNull();
+
+    await user.click(screen.getByTestId('map-mode-historical'));
+    expect(screen.getByTestId('map-mode-historical')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('historical-evidence-panel')).toBeVisible();
+    expect(screen.queryByTestId('report-mode-banner')).toBeNull();
+    expect(screen.queryByTestId('route-search-panel')).toBeNull();
+
+    await user.click(screen.getByTestId('map-mode-route'));
+    expect(screen.getByTestId('map-mode-route')).toHaveAttribute('aria-checked', 'true');
+    expect(screen.getByTestId('route-search-panel')).toBeVisible();
+    expect(screen.queryByTestId('historical-evidence-panel')).toBeNull();
+    expect(screen.queryByTestId('report-mode-banner')).toBeNull();
+  });
+});
+
+describe('historical popup to panel integration', () => {
+  it('keeps the popup reachable and opens historical details for its selected barangay', async () => {
+    const user = (await import('@testing-library/user-event')).default.setup();
+    const { historicalRiskRecords } = await import('../data/historical/ncrHistoricalFloodRisk');
+    const { HISTORICAL_RISK_FILL_LAYER_ID } = await import('../layers/historicalFloodRisk');
+    const handlers = new Map<string, (event: unknown) => void>();
+    const map = {
+      addSource: vi.fn(), addLayer: vi.fn(), setLayoutProperty: vi.fn(),
+      getLayer: vi.fn(() => ({})), getSource: vi.fn(() => ({ setData: vi.fn() })),
+      setFeatureState: vi.fn(), setFilter: vi.fn(), setPaintProperty: vi.fn(),
+      hasImage: vi.fn(() => true), addImage: vi.fn(), fitBounds: vi.fn(), flyTo: vi.fn(),
+      on: vi.fn((event: string, layer: unknown, handler?: (event: unknown) => void) => {
+        if (typeof layer === 'string' && handler) handlers.set(`${event}:${layer}`, handler);
+      }),
+      off: vi.fn(),
+    } as unknown as MinimalMap;
+    const { manager, init } = makeFakeManager(map);
+    render(<MapView config={CONFIG} createMapManager={() => manager} />);
+    act(() => initCallbacks(init).onReady());
+    await user.click(screen.getByTestId('layers-button'));
+    await user.click(screen.getByTestId('layer-checkbox-floodSusceptibility'));
+    const record = historicalRiskRecords[0];
+    await user.selectOptions(screen.getByTestId('explore-area-select'), 'city');
+    await user.selectOptions(screen.getByTestId('explore-city-select'), record.cityPsgc);
+    const move = handlers.get(`mousemove:${HISTORICAL_RISK_FILL_LAYER_ID}`);
+    expect(move).toBeDefined();
+    act(() => move!({ features: [{ id: record.psgc }], point: { x: 300, y: 200 } }));
+    const popup = screen.getByTestId('historical-hover-tooltip');
+    expect(popup).toHaveStyle({ left: '300px', top: '200px' });
+    act(() => move!({ features: [{ id: record.psgc }], point: { x: 310, y: 210 } }));
+    expect(popup).toHaveStyle({ left: '300px', top: '200px' });
+    await user.click(popup);
+    expect(screen.getByTestId('insights-barangay')).toHaveTextContent(record.name);
+    expect(screen.getByTestId('historical-tab')).toBeVisible();
+    expect(screen.queryByTestId('historical-hover-tooltip')).toBeNull();
+    // Archive marker clicks reuse the list selection and highlight its card.
+    await user.click(screen.getByTestId('map-mode-historical'));
+    await user.click(screen.getByTestId('historical-flow-toggle'));
+    const { historicalFloodEvidence } = await import('../data/historical/historicalFloodEvidence');
+    const item = historicalFloodEvidence.find((record) => record.coordinates)!;
+    const markerClick = handlers.get('click:historicalEvidence');
+    expect(markerClick).toBeDefined();
+    act(() => markerClick!({ features: [{ properties: { id: item.id } }] }));
+    expect(screen.getByTestId('historical-evidence-popup')).toHaveTextContent(item.title);
+    expect(screen.getByTestId('historical-selected-record')).toHaveTextContent(item.title);
+    expect(screen.getByTestId(`historical-item-${item.id}`)).toHaveAttribute('aria-pressed', 'true');
+    const flyTo = (map as unknown as { flyTo: ReturnType<typeof vi.fn> }).flyTo;
+    expect(flyTo).toHaveBeenLastCalledWith(expect.objectContaining({
+      center: [...item.coordinates!], zoom: 15.5, duration: 1000,
+    }));
+    flyTo.mockClear();
+    // Selecting the same item from the list replays the zoom animation.
+    await user.click(screen.getByTestId(`historical-item-${item.id}`));
+    expect(flyTo).toHaveBeenCalledTimes(1);
+    const unmapped = historicalFloodEvidence.find((record) => !record.coordinates)!;
+    await user.click(screen.getByTestId(`historical-item-${unmapped.id}`));
+    expect(flyTo).toHaveBeenCalledTimes(1);
+    expect(screen.getByTestId('historical-selected-record')).toHaveTextContent(unmapped.title);
+
   });
 });

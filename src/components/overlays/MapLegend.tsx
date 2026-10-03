@@ -54,9 +54,9 @@ const CURRENT_RISK_ENTRIES: readonly LegendEntry[] = [
 ];
 
 /**
- * Historical susceptibility color family (reference layer) — the INDIGO/VIOLET
- * ramp used by the historical map layer, kept distinct from the current-risk
- * green→red ramp so the two are never confused.
+ * Historical susceptibility color family (reference layer) — the warm yellow→orange→red
+ * ramp used by the historical map layer. Shown in its own legend section so it
+ * is never confused with the current-risk ramp.
  */
 const BASELINE_ENTRIES: readonly LegendEntry[] = [
   { key: 'b-high', label: 'High', color: HISTORICAL_RISK_COLORS.High.hex },

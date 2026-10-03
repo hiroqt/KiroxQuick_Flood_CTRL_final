@@ -62,6 +62,21 @@ describe('registerCommunityImages (hasImage-guarded, idempotent)', () => {
     expect(addImage).toHaveBeenCalledTimes(expected);
   });
 
+  it('renders a readable pin and at least a 44px tap target at its registered pixel ratio', () => {
+    const registered: Array<{ id: string; width: number; height: number; ratio: number }> = [];
+    registerCommunityImages({
+      hasImage: () => false,
+      addImage: (id, image, options) => registered.push({
+        id, width: image.width, height: image.height, ratio: options?.pixelRatio ?? 1,
+      }),
+    });
+    const pin = registered.find((image) => image.id === communityIconId('KNEE'))!;
+    const hit = registered.find((image) => image.id === COMMUNITY_HITBOX_ICON_ID)!;
+    expect(pin.width / pin.ratio).toBeGreaterThanOrEqual(32);
+    expect(hit.width / hit.ratio).toBeGreaterThanOrEqual(44);
+    expect(hit.height / hit.ratio).toBeGreaterThanOrEqual(pin.height / pin.ratio);
+  });
+
   it('does NOT re-add images that already exist (style-reload safe)', () => {
     const { map, addImage } = fakeMap();
     registerCommunityImages(map); // first registration

@@ -116,7 +116,7 @@ export function barangayRiskFillOpacityExpression(): unknown {
  * A DIMMED variant of the current-risk fill opacity, used PURELY for visual
  * co-existence when BOTH the current and historical layers are enabled and the
  * user is focused on the Historical tab. The current (green→red) fill recedes
- * to a faint overlay so it does not stack with the historical (indigo/violet)
+ * to a faint overlay so it does not stack with the historical (warm)
  * fill into a muddy double-fill. Paint-only — no data/feature-state change.
  * Classified levels keep a small floor so no polygon becomes invisible.
  */

@@ -1,0 +1,12 @@
+{
+  "name": "kiroxquick-migration-verification",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node e2e.mjs",
+    "parity": "node parity.mjs"
+  },
+  "dependencies": {
+    "playwright": "1.63.0"
+  }
+}

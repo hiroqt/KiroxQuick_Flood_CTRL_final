@@ -1,4 +1,7 @@
-﻿// src/components/MapView.tsx
+import type { FloodReport } from '../types/flood';
+import { collectRouteFloods, collectReportedFloods, floodHazardsOnRoute, type LocatedRouteFlood } from '../services/routeFloodHazards';
+import { findFloodAvoidingReroutes, rankFloodAvoidingOffers, rebaseMovingReroute, avoidsFloodPoints } from '../services/floodAvoidingReroute';
+// src/components/MapView.tsx
 //
 // React wrapper around MapManager (design â†’ Architecture: "React never touches
 // the raw map object directly; MapView mounts a container div and delegates to
@@ -30,6 +33,7 @@
 // constructor itself can also be faked without replacing the manager. The
 // DataSource and MarkerManager factory are likewise injectable for tests.
 
+import { FloodVoiceAgent, type FloodVoiceStatus } from '../services/floodVoiceAgent';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   MapManager,
@@ -52,14 +56,13 @@ import { MapContextControl } from './controls/MapContextControl';
 import { MapModeSwitcher, type MapMode } from './controls/MapModeSwitcher';
 import { RotateControl } from './controls/RotateControl';
 import { DriveSimulator } from '../simulation/DriveSimulator';
-import { SIM_SPEED_MPS } from '../simulation/DriveSimulator';
+import { SIM_SPEED_MPS, SIM_PLAYBACK_RATE, type SimPlaybackRate } from '../simulation/DriveSimulator';
 import { PITX_TO_MOA_MANEUVERS, PITX_TO_MOA_ROUTE } from '../data/fixtures/pitxToMoaRoute';
-import { PITX_TO_MOA_HAZARDS, type DriveHazard } from '../data/fixtures/driveHazards';
+import { type DriveHazard } from '../data/fixtures/driveHazards';
 import { PITX_TO_MOA_REROUTES, type FloodReroute } from '../data/fixtures/floodReroutes';
 import type { RouteManeuver } from '../data/fixtures/pitxToMoaRoute';
 import {
-  findRerouteOffer,
-  formatRerouteDelta,
+  branchPoint,
   stitchReroute,
   type RerouteOffer,
 } from '../simulation/reroute';
@@ -83,6 +86,8 @@ import { LocationConsentDialog } from './trip/LocationConsentDialog';
 import {
   planRoutes,
   compareRoutes,
+  getInitialRouteSelection,
+  isRouteStartBlocked,
   type RouteOption,
   type RoutePreference,
 } from '../services/routePlanning';
@@ -92,19 +97,20 @@ import { currentRiskLabel, formatRelativeTime } from '../layers/riskLabels';
 import { isDataQualityState } from '../types/risk';
 import { FLOOD_STATE_COLORS, HISTORICAL_RISK_COLORS } from '../map/basemap/colorTokens';
 import { DrivingHud } from './driving/DrivingHud';
-import type { DriveCameraMode, DriveMarker, DriveRadius, DriveUpdate } from '../map/MapManager';
+import type { DriveCameraMode, DriveMarker, DriveRadius, DriveUpdate, PreviewRoute } from '../map/MapManager';
 
 /** The original PITX â†’ MOA route, measured once (reroutes branch off it). */
 const BASE_ROUTE = measureRoute(PITX_TO_MOA_ROUTE);
 
-/** Demo hazard dots placed on the route (report colors, labeled in the HUD). */
-const DRIVE_HAZARD_MARKERS: ReadonlyArray<DriveMarker> = (() => {
-  const route = measureRoute(PITX_TO_MOA_ROUTE);
-  return PITX_TO_MOA_HAZARDS.map((h) => ({
-    position: pointAlong(route, h.atM),
-    color: FLOOD_STATE_COLORS[h.state].hex,
+/** Marker coordinates and alerts share the selected route's measured geometry. */
+function demoMarkersFor(candidate: RouteOption['candidate']): DriveMarker[] {
+  const measured = measureRoute(candidate.route);
+  return (candidate.demoFloods ?? []).map((hazard) => ({
+    position: pointAlong(measured, hazard.atM),
+    color: FLOOD_STATE_COLORS[hazard.state].hex,
+    label: `DEMO · ${hazard.passability === 'passable' ? 'Passable' : 'Not passable'}`,
   }));
-})();
+}
 import { LocationControl } from './controls/LocationControl';
 import { LayerControl } from './controls/LayerControl';
 import { LayersButton } from './controls/LayersButton';
@@ -151,7 +157,6 @@ import {
   installBarangayFloodRisk,
   setSelectedBarangay,
   barangayRiskFillOpacityExpression,
-  barangayRiskFillOpacityDimmedExpression,
   BARANGAY_RISK_SOURCE_ID,
   BARANGAY_RISK_FILL_LAYER_ID,
   type BarangayRiskMapAdapter,
@@ -187,17 +192,6 @@ import type { CommunityReport } from '../types/report';
 import { resolveBarangayForPoint } from '../services/reportResolution';
 import { barangayInfoByPsgc } from '../data/geojson/ncrBarangays';
 import {
-  installAiFloodEvidence,
-  installAiFloodEvidencePopups,
-  updateAiFloodEvidenceSource,
-  type EvidencePopupMap,
-} from '../layers/aiFloodEvidenceLayer';
-import { EvidencePopup, type EvidencePopupProps } from './overlays/EvidencePopup';
-import { GdeltService } from '../services/gdeltService';
-import { buildEvidenceFromArticles, evidenceByBarangay } from '../services/floodEvidenceAgent';
-import { FloodEvidenceStore, activeEvidenceCountFor } from '../services/floodEvidenceStore';
-import { loadConfig } from '../services/env';
-import {
   HistoricalEvidencePopup,
   type HistoricalEvidencePopupProps,
 } from './overlays/HistoricalEvidencePopup';
@@ -209,21 +203,21 @@ import {
   type HistoricalLayerMapAdapter,
   type HistoricalSourceUpdateMap,
 } from '../layers/historicalEvidenceLayer';
+import { installHistoricalEvidenceSelection } from '../layers/historicalEvidenceSelection';
 import { HistoricalEvidencePanel } from './insights/HistoricalEvidencePanel';
 import { historicalFloodEvidence } from '../data/historical/historicalFloodEvidence';
 import {
   FloodInsights,
   type InsightsTab,
   type SheetState,
-  type BarangayWebEvidenceSummary,
 } from './insights/FloodInsights';
 import { HistoricalExplorePanel } from './insights/HistoricalExplorePanel';
 import { historicalRiskByBarangay } from '../data/historical/ncrHistoricalFloodRisk';
 import {
   applyHistoricalRiskStates,
   applyHistoricalFilter,
+  applyHistoricalCityScope,
   historicalFillOpacityExpression,
-  historicalFillOpacityDimmedExpression,
   setSelectedHistoricalBarangay,
   buildHistoricalSource,
   buildHistoricalFillLayer,
@@ -250,6 +244,8 @@ import {
 } from '../layers/historicalFloodRisk';
 import {
   buildCityBoundarySource,
+  buildHistoricalCityFillLayer,
+  CITY_HISTORICAL_FILL_LAYER_ID,
   buildCityBoundaryLayer,
   buildCityBoundarySelectedLayer,
   installCityHover,
@@ -348,7 +344,7 @@ function DriveRiskBanner({
     <div className="baharoute-drive-risk" role="status" data-testid="drive-risk-banner">
       <span className="baharoute-drive-risk__label">Route risk: {riskText}</span>
       <span className="baharoute-drive-risk__sep" aria-hidden="true">
-        Â·
+        ·
       </span>
       <span className="baharoute-drive-risk__freshness">{freshness}</span>
     </div>
@@ -392,13 +388,13 @@ export interface MapManagerLike {
   ) => void;
   /** Draws the pre-drive route preview (selected emphasized + alternatives faded). */
   showRoutePreview?: (
-    routes: ReadonlyArray<{ id: string; geometry: ReadonlyArray<[number, number]> }>,
+    routes: ReadonlyArray<PreviewRoute>,
     selectedId: string,
     ends: [[number, number], [number, number]],
   ) => void;
   /** Re-emphasizes the preview for a newly selected route id. */
   updateRoutePreviewSelection?: (
-    routes: ReadonlyArray<{ id: string; geometry: ReadonlyArray<[number, number]> }>,
+    routes: ReadonlyArray<PreviewRoute>,
     selectedId: string,
   ) => void;
   /** Binds a click on alternative route lines â†’ route id; returns teardown. */
@@ -567,14 +563,6 @@ export function MapView({
   const uninstallMarkerImageReloadRef = useRef<(() => void) | null>(null);
   /** Teardown for the historical-evidence image re-registration (style reload). */
   const uninstallHistoricalImageReloadRef = useRef<(() => void) | null>(null);
-  /** Teardown for the AI evidence marker popup. */
-  const uninstallEvidencePopupRef = useRef<(() => void) | null>(null);
-  /** The AI Flood Evidence store (live + demo-when-enabled separation). */
-  const evidenceStoreRef = useRef<FloodEvidenceStore | null>(null);
-  /** The GDELT discovery service (resilient, never throws). */
-  const gdeltServiceRef = useRef<GdeltService | null>(null);
-  /** Poll timer for the GDELT discovery cycle. */
-  const evidencePollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   /** Owns the live barangay current-risk pipeline (rainfall â†’ risk â†’ paint). */
   const riskControllerRef = useRef<BarangayRiskController | null>(null);
   const unsubscribeRiskStatusRef = useRef<(() => void) | null>(null);
@@ -582,6 +570,8 @@ export function MapView({
   const unsubscribeReportsRef = useRef<(() => void) | null>(null);
   /** Teardown for the barangay-source-ready reapply listener (sourcedata). */
   const uninstallRiskReapplyRef = useRef<(() => void) | null>(null);
+  /** Teardown for the historical-source-ready reapply listener (sourcedata). */
+  const uninstallHistoricalReapplyRef = useRef<(() => void) | null>(null);
   /** Teardown for the historical hover-tooltip listener. */
   const uninstallHistoricalHoverRef = useRef<(() => void) | null>(null);
   /** Teardown for the city hover-tooltip listener. */
@@ -623,8 +613,7 @@ export function MapView({
     | { kind: 'flood'; props: FloodPopupProps; lngLat: LngLatLike }
     | { kind: 'barangay'; psgc: string; lngLat?: LngLatLike }
     | { kind: 'report'; props: ReportPopupProps; lngLat: LngLatLike }
-    | { kind: 'evidence'; props: EvidencePopupProps; lngLat: LngLatLike }
-    | { kind: 'historical'; props: HistoricalEvidencePopupProps; lngLat?: LngLatLike }
+    | { kind: 'historical'; evidenceId: string; props: HistoricalEvidencePopupProps; lngLat?: LngLatLike }
     | null
   >(null);
   /** Live rainfall/risk status for the compact status pill. */
@@ -657,6 +646,9 @@ export function MapView({
   const [historicalFilter, setHistoricalFilter] = useState<HistoricalFilterState>(
     DEFAULT_HISTORICAL_FILTER,
   );
+  /** Latest historical filter, for the once-bound source-ready reapply. */
+  const historicalFilterRef = useRef(historicalFilter);
+  historicalFilterRef.current = historicalFilter;
   /**
    * Active tab of the unified Flood Insights panel. Remembered across barangay
    * selections so a user who prefers "Historical" keeps it; a barangay click
@@ -669,6 +661,21 @@ export function MapView({
   const [historicalHover, setHistoricalHover] = useState<HistoricalHoverInfo | null>(null);
   /** Hovered city boundary (name/count + cursor point), or null. */
   const [cityHover, setCityHover] = useState<CityHoverInfo | null>(null);
+  const hoverDismissRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const keepHistoricalHover = (): void => {
+    if (hoverDismissRef.current) clearTimeout(hoverDismissRef.current);
+  };
+  const dismissHistoricalHover = (): void => {
+    keepHistoricalHover();
+    hoverDismissRef.current = setTimeout(() => {
+      setHistoricalHover(null);
+      setCityHover(null);
+    }, 250);
+  };
+  useEffect(() => () => {
+    if (hoverDismissRef.current) clearTimeout(hoverDismissRef.current);
+  }, []);
+  const evidenceSelectRef = useRef<(id: string) => void>(() => {});
   /**
    * Bumps whenever the risk controller repaints (poll tick / report added), so
    * an open barangay panel re-derives its props from the latest live data.
@@ -817,10 +824,6 @@ export function MapView({
         uninstallHistoricalImageReloadRef.current();
         uninstallHistoricalImageReloadRef.current = null;
       }
-      if (uninstallEvidencePopupRef.current) {
-        uninstallEvidencePopupRef.current();
-        uninstallEvidencePopupRef.current = null;
-      }
       if (uninstallRotateSyncRef.current) {
         uninstallRotateSyncRef.current();
         uninstallRotateSyncRef.current = null;
@@ -840,6 +843,10 @@ export function MapView({
       if (uninstallRiskReapplyRef.current) {
         uninstallRiskReapplyRef.current();
         uninstallRiskReapplyRef.current = null;
+      }
+      if (uninstallHistoricalReapplyRef.current) {
+        uninstallHistoricalReapplyRef.current();
+        uninstallHistoricalReapplyRef.current = null;
       }
       if (uninstallHistoricalHoverRef.current) {
         uninstallHistoricalHoverRef.current();
@@ -861,12 +868,7 @@ export function MapView({
         riskControllerRef.current.stop();
         riskControllerRef.current = null;
       }
-      if (evidencePollRef.current) {
-        clearInterval(evidencePollRef.current);
-        evidencePollRef.current = null;
-      }
-      evidenceStoreRef.current = null;
-      gdeltServiceRef.current = null;
+
       markerManagerRef.current?.destroy();
       markerManagerRef.current = null;
       cameraMarkerManagerRef.current?.destroy();
@@ -972,8 +974,7 @@ export function MapView({
       } catch (error) {
         if (disposed || sequence !== requestSequence || (error instanceof DOMException && error.name === 'AbortError')) return;
         if (lastViewportKey === key) lastViewportKey = '';
-        cameraSnapshotRef.current = null;
-        markerManager.setCameras([]);
+        // Keep already-visible cameras available during a transient failure.
       } finally {
         if (requestController === controller) requestController = null;
       }
@@ -1082,11 +1083,19 @@ export function MapView({
       // install resolves â€” hiding synchronously here would run before the
       // layers exist and leave "Historical Flood Risk" showing on load. All
       // thematic layers start OFF; the user opts in via the layer drawer.
+      // Their companion outlines are added directly (not registry-managed), so
+      // hide those too or the demo city/hazard shapes linger over the map.
       void installCityFloodSummary(map, registry)
-        .then(() => registry.setVisibility('cityFloodSummary', false))
+        .then(() => {
+          registry.setVisibility('cityFloodSummary', false);
+          setLayoutVisibility(map, 'cityFloodSummary-outline', false);
+        })
         .catch(() => undefined);
       void installFloodSusceptibility(map, registry)
-        .then(() => registry.setVisibility('floodSusceptibility', false))
+        .then(() => {
+          registry.setVisibility('floodSusceptibility', false);
+          setLayoutVisibility(map, 'floodSusceptibility-outline', false);
+        })
         .catch(() => undefined);
 
       // HISTORICAL Flood Risk (derived Project NOAH / Phil-LiDAR per-barangay
@@ -1100,12 +1109,14 @@ export function MapView({
         // outline â†’ selected-city boundary â†’ selected-barangay outline.
         const cityAdapter = map as unknown as CityBoundaryMapAdapter;
         cityAdapter.addSource(CITY_BOUNDARY_SOURCE_ID, buildCityBoundarySource());
+        cityAdapter.addLayer(buildHistoricalCityFillLayer());
         cityAdapter.addLayer(buildCityBoundaryLayer(CITY_BOUNDARY_SOURCE_ID));
 
         const brgyAdapter = map as unknown as HistoricalMapAdapter;
         brgyAdapter.addSource(HISTORICAL_RISK_SOURCE_ID, buildHistoricalSource());
         brgyAdapter.addLayer(buildHistoricalFillLayer(HISTORICAL_RISK_SOURCE_ID));
         brgyAdapter.addLayer(buildHistoricalOutlineLayer(HISTORICAL_RISK_SOURCE_ID));
+        applyHistoricalCityScope(map, historicalFilterRef.current);
 
         // Selected-city boundary above barangay fills, below selected barangay.
         cityAdapter.addLayer(buildCityBoundarySelectedLayer(CITY_BOUNDARY_SOURCE_ID));
@@ -1129,7 +1140,43 @@ export function MapView({
         );
         applyCityFocus(map as unknown as CityBoundaryFeatureStateMap, null);
 
+        // Same dropped-feature-state race as the current-risk layer: the
+        // emphasis/city-focus states written above can be lost if the sources
+        // had not parsed yet. Re-apply the LATEST filter once either historical
+        // source reports loaded. (The class color itself is a baked property,
+        // so it never depends on this.)
+        {
+          const evented = map as unknown as {
+            on?: (t: string, l: (e?: unknown) => void) => void;
+            off?: (t: string, l: (e?: unknown) => void) => void;
+          };
+          const histSourcesReady = new Set<string>();
+          const onHistSourceData = (e?: unknown): void => {
+            const ev = e as { sourceId?: string; isSourceLoaded?: boolean } | undefined;
+            if (
+              ev?.sourceId !== HISTORICAL_RISK_SOURCE_ID &&
+              ev?.sourceId !== CITY_BOUNDARY_SOURCE_ID
+            ) {
+              return;
+            }
+            if (ev.isSourceLoaded === false || histSourcesReady.has(ev.sourceId)) return;
+            // Once loaded, feature-state persists; later filter changes are
+            // applied by the filter effect, so reapply only on first load.
+            histSourcesReady.add(ev.sourceId);
+            const f = historicalFilterRef.current;
+            applyHistoricalFilter(map as unknown as HistoricalFeatureStateMap, f);
+            applyCityFocus(
+              map as unknown as CityBoundaryFeatureStateMap,
+              f.view === 'ncr' ? null : f.cityPsgc,
+            );
+          };
+          evented.on?.('sourcedata', onHistSourceData);
+          uninstallHistoricalReapplyRef.current = () =>
+            evented.off?.('sourcedata', onHistSourceData);
+        }
+
         for (const id of [
+          CITY_HISTORICAL_FILL_LAYER_ID,
           CITY_BOUNDARY_LAYER_ID,
           CITY_BOUNDARY_SELECTED_LAYER_ID,
           HISTORICAL_RISK_FILL_LAYER_ID,
@@ -1138,18 +1185,32 @@ export function MapView({
           HISTORICAL_LABEL_LAYER_ID,
           HISTORICAL_LABEL_SELECTED_LAYER_ID,
         ]) {
-          setLayoutVisibility(map, id, false);
+          const filter = historicalFilterRef.current;
+          const overview = filter.view === 'ncr' || !filter.cityPsgc;
+          const enabled = layerVisibilityRef.current.floodSusceptibility === true;
+          const surfaceVisible = id === CITY_HISTORICAL_FILL_LAYER_ID
+            ? overview
+            : id === HISTORICAL_RISK_FILL_LAYER_ID || id === HISTORICAL_RISK_OUTLINE_LAYER_ID
+              ? !overview
+              : true;
+          setLayoutVisibility(map, id, enabled && surfaceVisible);
         }
 
         // Barangay hover tooltip (name / city / historical class).
         uninstallHistoricalHoverRef.current = installHistoricalHover(
           map as unknown as HistoricalHoverMap,
-          (info) => setHistoricalHover(info),
+          (info) => {
+            if (info) { keepHistoricalHover(); setHistoricalHover((previous) => previous?.psgc === info.psgc ? previous : info); setCityHover(null); }
+            else dismissHistoricalHover();
+          },
         );
         // City hover tooltip (city name + barangay count), city mode only.
         uninstallCityHoverRef.current = installCityHover(
           map as unknown as CityHoverMap,
-          (info) => setCityHover(info),
+          (info) => {
+            if (info) { keepHistoricalHover(); setCityHover((previous) => previous?.cityPsgc === info.cityPsgc ? previous : info); setHistoricalHover(null); }
+            else dismissHistoricalHover();
+          },
         );
         // City map-line/polygon click â†’ select that city (city mode).
         uninstallCityClickRef.current = installCityClick(
@@ -1267,6 +1328,13 @@ export function MapView({
             //   both on (or neither) â†’ keep the user's last-selected tab.
             const currentOn = layerVisibilityRef.current.barangayFloodRisk === true;
             const historicalOn = layerVisibilityRef.current.floodSusceptibility === true;
+            // In NCR overview a map tap selects the city, even when the
+            // current-risk surface underneath also receives the same click.
+            if (historicalOn && historicalFilterRef.current.view === 'ncr') {
+              const city = historicalRiskByBarangay.get(psgc)?.cityPsgc;
+              if (city) cityClickHandlerRef.current(city);
+              return;
+            }
             if (currentOn && !historicalOn) setInsightsTab('current');
             else if (historicalOn && !currentOn) setInsightsTab('historical');
             setInsightsSheet('half');
@@ -1344,77 +1412,6 @@ export function MapView({
           // Best-effort.
         }
 
-        // AI Flood Evidence overlay (GDELT discovery). Its own try so a failure
-        // of the evidence agent NEVER breaks the map or the other layers â€” the
-        // app keeps running on rainfall + reports + historical + closures. The
-        // layer starts HIDDEN (opt-in). Demo Mode is read from config; when on,
-        // synthetic evidence is included and badged DEMO. When off, no synthetic
-        // item appears.
-        try {
-          const config = loadConfig();
-          const store = new FloodEvidenceStore(config.demoMode);
-          const gdelt = new GdeltService();
-          evidenceStoreRef.current = store;
-          gdeltServiceRef.current = gdelt;
-
-          installAiFloodEvidence(
-            map as unknown as PointLayerMapAdapter,
-            registry,
-            store.evidence(),
-          );
-          registry.setVisibility('aiFloodEvidence', false);
-
-          // Click popup for evidence markers. Markers only exist for
-          // location-resolved evidence, so this never surfaces a faked point.
-          uninstallEvidencePopupRef.current = installAiFloodEvidencePopups(
-            map as unknown as EvidencePopupMap,
-            (data, lngLat) =>
-              setPopup({
-                kind: 'evidence',
-                props: {
-                  eventType: data.eventType,
-                  confidence: data.confidence,
-                  status: data.status,
-                  synthetic: data.synthetic,
-                  sourceName: data.sourceName,
-                  sourceUrl: data.sourceUrl,
-                  summary: data.summary,
-                  city: data.city,
-                  barangay: data.barangay,
-                  publishedAt: data.publishedAt,
-                },
-                lngLat,
-              }),
-          );
-
-          // Push store changes to the evidence source so the markers refresh.
-          store.subscribe((snap) => {
-            const liveMap = managerRef.current?.getMap?.() ?? null;
-            if (!liveMap) return;
-            updateAiFloodEvidenceSource(
-              liveMap as unknown as PointSourceUpdateMap,
-              snap.evidence,
-            );
-          });
-
-          // One discovery cycle: fetch GDELT, normalize to evidence, update the
-          // store + agent-availability. Never throws (service is fail-safe).
-          const runEvidenceCycle = async (): Promise<void> => {
-            const svc = gdeltServiceRef.current;
-            const st = evidenceStoreRef.current;
-            if (!svc || !st) return;
-            const articles = await svc.ensureFresh();
-            st.setAgentUnavailable(svc.isUnavailable());
-            st.setLiveEvidence(buildEvidenceFromArticles(articles));
-          };
-          void runEvidenceCycle();
-          evidencePollRef.current = setInterval(() => {
-            void runEvidenceCycle();
-          }, 15 * 60 * 1000); // GDELT: every 15 minutes (lightweight).
-        } catch {
-          // Evidence agent is best-effort; the map stays fully usable without it.
-        }
-
         // HISTORICAL Flood Evidence overlay (DEMO / RESEARCH USE ONLY, NOT
         // CURRENT CONDITIONS). Its own try so a failure never affects the map.
         // Installed hidden; the panel toggles it. Context only — it never
@@ -1423,6 +1420,10 @@ export function MapView({
           installHistoricalEvidence(
             map as unknown as HistoricalLayerMapAdapter,
             historicalFloodEvidence,
+          );
+          const uninstallSelection = installHistoricalEvidenceSelection(
+            map as unknown as BarangayPopupMap,
+            (id) => evidenceSelectRef.current(id),
           );
           const styledHist = map as unknown as {
             on?: (t: string, l: () => void) => void;
@@ -1436,8 +1437,10 @@ export function MapView({
             }
           };
           styledHist.on?.('styledata', onHistStyle);
-          uninstallHistoricalImageReloadRef.current = () =>
+          uninstallHistoricalImageReloadRef.current = () => {
+            uninstallSelection();
             styledHist.off?.('styledata', onHistStyle);
+          };
         } catch {
           // Historical overlay is best-effort context; never blocks the map.
         }
@@ -1512,6 +1515,7 @@ export function MapView({
       managerRef.current?.easeTo?.({
         center: [...camera.coordinates],
         zoom: 14,
+        duration: 450,
       });
       cameraMarkerManagerRef.current?.openPopupForCamera(camera);
     },
@@ -1576,6 +1580,7 @@ export function MapView({
   /** True while "report flooding" map-pick mode is active (next tap = report). */
   const [reportPickActive, setReportPickActive] = useState(false);
   const [mobileControlsOpen, setMobileControlsOpen] = useState(false);
+  const [controlPanel, setControlPanel] = useState<'layers' | 'cameras' | null>(null);
   const reportPickActiveRef = useRef(false);
   /**
    * HISTORICAL Flood Evidence panel open state (DEMO / RESEARCH USE ONLY). When
@@ -1636,9 +1641,19 @@ export function MapView({
   // by the driving HUD (next turn, flood-ahead banner, trip progress).
   const driving = tripStage === 'navigating';
   const [nav, setNav] = useState<NavState | null>(null);
+  const [voiceStatus, setVoiceStatus] = useState<FloodVoiceStatus>('ready');
+  const voiceAgentRef = useRef<FloodVoiceAgent | null>(null);
+  if (!voiceAgentRef.current) voiceAgentRef.current = new FloodVoiceAgent(setVoiceStatus);
   const [driveCamera, setDriveCameraState] = useState<DriveCameraMode>('driver');
   const [driveRadius, setDriveRadiusState] = useState<DriveRadius>(250);
+  const [drivePlaybackRate, setDrivePlaybackRate] = useState<SimPlaybackRate>(SIM_PLAYBACK_RATE);
+  const drivePlaybackRateRef = useRef<SimPlaybackRate>(SIM_PLAYBACK_RATE);
   const simulatorRef = useRef<DriveSimulator | null>(null);
+  const handleDrivePlaybackRate = (rate: SimPlaybackRate): void => {
+    drivePlaybackRateRef.current = rate;
+    setDrivePlaybackRate(rate);
+    simulatorRef.current?.setPlaybackRate(rate);
+  };
   /** Last rendered HUD key: only re-render React when displayed text changes. */
   const navKeyRef = useRef('');
   /**
@@ -1648,12 +1663,35 @@ export function MapView({
    */
   const [driveRisk, setDriveRisk] = useState<RouteOption | null>(null);
 
-  // Reroute: offered while driving (the car never stops) when a demo flood
-  // report is within 1 km. If the driver passes the branch point of an offered
-  // reroute without choosing, it is missed and the next reroute is offered.
+  // Keep moving while the driver reviews flood-avoiding alternatives.
   const [offer, setOffer] = useState<RerouteOffer | null>(null);
-  /** Hazards the driver chose to keep driving through: stop offering. */
-  const dismissedRef = useRef<Set<string>>(new Set());
+  const [routeOffers, setRouteOffers] = useState<readonly RerouteOffer[]>([]);
+  const routeOffersRef = useRef<readonly RerouteOffer[]>([]);
+  const continuedHazardsRef = useRef(new Set<string>());
+  const offerDisplayKeyRef = useRef('');
+  const [rerouteStatus, setRerouteStatus] = useState<'searching' | 'unavailable' | null>(null);
+  const rerouteGenerationRef = useRef(0);
+  const requestedReroutesRef = useRef(new Set<string>());
+  const reroutePendingRef = useRef(false);
+  const rerouteAttemptMRef = useRef(-Infinity);
+  const floodPointsRef = useRef<Array<[number, number]>>([]);
+  const locatedFloodsRef = useRef<LocatedRouteFlood[]>([]);
+  const reportedFloodsRef = useRef<LocatedRouteFlood[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    const reportLayers = source.listLayers().filter((layer) => layer.id === 'floodReports' || layer.id === 'communityReports');
+    void Promise.allSettled(reportLayers.map((layer) => source.getLayer<FloodReport>(layer.id).load())).then((results) => {
+      if (cancelled) return;
+      reportedFloodsRef.current = results.flatMap((result) => result.status === 'fulfilled'
+        ? collectReportedFloods(result.value.items ?? [], result.value.isDemo) : []);
+      if (simulatorRef.current) {
+        locatedFloodsRef.current = [...locatedFloodsRef.current.filter((f) => !f.hazard.id.startsWith('report:')), ...reportedFloodsRef.current];
+        floodPointsRef.current = locatedFloodsRef.current.map((f) => f.position);
+        activeHazardsRef.current = floodHazardsOnRoute(activeBaseRouteRef.current.points, locatedFloodsRef.current);
+      }
+    });
+    return () => { cancelled = true; };
+  }, [source]);
   /** Hazards still ahead on the ACTIVE route (empty after a reroute). */
   const activeHazardsRef = useRef<ReadonlyArray<DriveHazard>>([]);
   /** Reroutes available on the ACTIVE route (empty for non-demo routes). */
@@ -1666,18 +1704,24 @@ export function MapView({
   const activeBaseRouteRef = useRef<MeasuredRoute>(BASE_ROUTE);
   /** Maneuvers of the ACTIVE route's original line (for reroute stitching). */
   const activeBaseManeuversRef = useRef<ReadonlyArray<RouteManeuver>>(PITX_TO_MOA_MANEUVERS);
+  const activeDurationSRef = useRef(0);
   /** Latest frame, so a tap uses the vehicle's current position. */
   const lastFrameRef = useRef<DriveFrame | null>(null);
-  /** Identity of the rendered offer, to avoid per-frame React updates. */
-  const offerKeyRef = useRef('');
 
   const stopDrive = (): void => {
+    rerouteGenerationRef.current += 1;
+    requestedReroutesRef.current.clear();
+    reroutePendingRef.current = false;
+    rerouteAttemptMRef.current = -Infinity;
+    setRerouteStatus(null);
+    routeOffersRef.current = [];
+    setRouteOffers([]);
+    continuedHazardsRef.current.clear();
+    voiceAgentRef.current?.stop();
     simulatorRef.current?.stop();
     simulatorRef.current = null;
     managerRef.current?.endDriveView?.();
     navKeyRef.current = '';
-    offerKeyRef.current = '';
-    dismissedRef.current = new Set();
     activeHazardsRef.current = [];
     activeReroutesRef.current = [];
     lastFrameRef.current = null;
@@ -1685,19 +1729,79 @@ export function MapView({
     setNav(null);
     setDriveRisk(null);
     // Return to the comparison so the commuter can pick another route or search.
+    setPopup(null);
     setTripStage(routeOptions.length > 0 ? 'comparing' : 'search');
+    if (routeOptions.length > 0 && tripOrigin && tripDestination) {
+      managerRef.current?.showRoutePreview?.(
+        previewRoutesFor(routeOptions),
+        selectedRouteId ?? '',
+        [
+          [tripOrigin.coord[0], tripOrigin.coord[1]],
+          [tripDestination.coord[0], tripDestination.coord[1]],
+        ],
+      );
+    }
   };
 
-  /** Current reroute offer for a frame on the active (original) route. */
-  const offerFor = (frame: DriveFrame, hazardId: string | null): RerouteOffer | null =>
-    findRerouteOffer(
-      activeBaseRouteRef.current,
-      frame.traveledM,
-      hazardId,
-      activeReroutesRef.current,
-      dismissedRef.current,
-      SIM_SPEED_MPS,
-    );
+  /** Calculate joinable alternatives ahead of the moving vehicle. */
+  const requestDynamicReroute = async (hazardId: string): Promise<void> => {
+    const frame = lastFrameRef.current;
+    if (!frame || requestedReroutesRef.current.has(hazardId)) return;
+    requestedReroutesRef.current.add(hazardId);
+    reroutePendingRef.current = true;
+    rerouteAttemptMRef.current = frame.traveledM;
+    setRerouteStatus('searching');
+    const generation = ++rerouteGenerationRef.current;
+    const base = activeBaseRouteRef.current;
+    const destination = base.points[base.points.length - 1];
+    const hazard = activeHazardsRef.current.find((h) => h.id === hazardId);
+    // Request from an upcoming road position so the vehicle can join after the response arrives.
+    const leadM = Math.min(350, Math.max(0, ((hazard?.atM ?? frame.traveledM) - frame.traveledM) * 0.4));
+    const routingM = Math.min(base.length, Math.max(frame.traveledM, (hazard?.atM ?? frame.traveledM) - 900) + leadM);
+    const routingPosition = pointAlong(base, routingM);
+    try {
+      // Join every available bundled alternative from the upcoming road position.
+      const existingRoads: FloodReroute[] = routeOptions.map(({ candidate }) => ({
+        hazardId, fromM: 0, route: candidate.route, maneuvers: candidate.maneuvers,
+        distanceM: candidate.distanceM, originalRemainingM: base.length,
+      }));
+      const bundled = [...activeReroutesRef.current, ...existingRoads].flatMap((reroute) => {
+        const branch = branchPoint(activeBaseRouteRef.current, reroute);
+        if (!branch || branch.baseM < routingM) return [];
+        const next = stitchReroute(activeBaseRouteRef.current, activeBaseManeuversRef.current, reroute, routingM);
+        if (!next || !avoidsFloodPoints(next.route, floodPointsRef.current)) return [];
+        return [{ id: `bundled-${reroute.hazardId}-${reroute.fromM}`, label: 'Bundled flood-avoiding road route',
+          route: next.route, maneuvers: next.maneuvers, distanceM: next.lengthM,
+          durationS: next.lengthM / SIM_SPEED_MPS, hazards: [] }];
+      });
+      const context = routePlanningContext();
+      const speed = activeDurationSRef.current > 0 ? frame.lengthM / activeDurationSRef.current : SIM_SPEED_MPS;
+      const publish = (options: readonly RerouteOffer[]): void => {
+        const current = lastFrameRef.current;
+        const verified = current ? options.flatMap((option) => {
+          const joined = rebaseMovingReroute(option, activeBaseRouteRef.current, activeBaseManeuversRef.current, current.traveledM, floodPointsRef.current);
+          return joined ? [joined] : [];
+        }) : [];
+        routeOffersRef.current = verified;
+        setRouteOffers(verified);
+        setOffer(verified[0] ?? null);
+      };
+      publish(rankFloodAvoidingOffers(bundled, routingPosition, destination, floodPointsRef.current,
+        hazardId, frame.lengthM - routingM, speed, context));
+      const result = await findFloodAvoidingReroutes(
+        routingPosition, destination, floodPointsRef.current, hazardId,
+        frame.lengthM - routingM, speed,
+        { mapboxToken: config.tileKey, mode: travelMode }, context, bundled,
+      );
+      if (generation !== rerouteGenerationRef.current) return;
+      publish(result);
+      setRerouteStatus(routeOffersRef.current.length ? null : 'unavailable');
+    } catch {
+      if (generation === rerouteGenerationRef.current) setRerouteStatus('unavailable');
+    } finally {
+      if (generation === rerouteGenerationRef.current) reroutePendingRef.current = false;
+    }
+  };
 
   /** Plays `route` (optionally from `fromM`), driving the camera + HUD. */
   const runSimulator = (
@@ -1709,26 +1813,48 @@ export function MapView({
     simulatorRef.current?.stop();
     // Measure the SAME geometry the simulator drives (dev diagnostics only).
     const measuredForDiag = measureRoute(route);
+    lastFrameRef.current = null;
     const simulator: DriveSimulator = new DriveSimulator({
       route,
+      playbackRate: drivePlaybackRateRef.current,
       onFrame: (frame) => {
         lastFrameRef.current = frame;
         logDriveFrame(measuredForDiag, frame);
         manager.updateDrive?.(frame);
+        voiceAgentRef.current?.update(frame, measuredForDiag, activeHazardsRef.current);
         const state = computeNavState(
           frame.traveledM,
           frame.lengthM,
           maneuvers,
           activeHazardsRef.current,
-          SIM_SPEED_MPS,
+          activeDurationSRef.current > 0 ? frame.lengthM / activeDurationSRef.current : SIM_SPEED_MPS,
+          measuredForDiag,
         );
-        const pending = offerFor(frame, state.hazard?.id ?? null);
-        const offerKey = pending
-          ? `${pending.reroute.hazardId}@${pending.reroute.fromM}|${formatRerouteDelta(pending)}|${formatDistance(pending.toBranchM)}|${pending.isRetry}`
-          : '';
-        if (offerKey !== offerKeyRef.current) {
-          offerKeyRef.current = offerKey;
-          setOffer(pending);
+        const upcomingHazard = activeHazardsRef.current.find((h) => h.atM >= frame.traveledM && h.atM - frame.traveledM <= 2500);
+        if (upcomingHazard && !continuedHazardsRef.current.has(upcomingHazard.id) &&
+          (!requestedReroutesRef.current.has(upcomingHazard.id) ||
+            (!reroutePendingRef.current && !routeOffersRef.current.length && frame.traveledM - rerouteAttemptMRef.current >= 150))) {
+          // Keep moving while alternatives are calculated.
+          const hazardId = upcomingHazard.id;
+          requestedReroutesRef.current.delete(hazardId);
+          const generation = rerouteGenerationRef.current;
+          void Promise.resolve().then(() => {
+            if (generation === rerouteGenerationRef.current) return requestDynamicReroute(hazardId);
+          });
+        }
+        if (routeOffersRef.current.length) {
+          const joinable = routeOffersRef.current.flatMap((option) => {
+            const joined = rebaseMovingReroute(option, activeBaseRouteRef.current, activeBaseManeuversRef.current, frame.traveledM, floodPointsRef.current);
+            return joined ? [joined] : [];
+          });
+          const displayKey = joinable.map((o) => `${o.reroute.hazardId}:${formatDistance(o.toBranchM)}`).join('|');
+          if (displayKey !== offerDisplayKeyRef.current) {
+            offerDisplayKeyRef.current = displayKey;
+            setRouteOffers(joinable);
+            setOffer(joinable[0] ?? null);
+            if (!joinable.length) setRerouteStatus('unavailable');
+          }
+          if (!joinable.length) routeOffersRef.current = [];
         }
         const key = [
           state.next?.atM,
@@ -1755,19 +1881,10 @@ export function MapView({
   const routePlanningContext = () => {
     const controller = riskControllerRef.current;
     const status = controller?.status();
-    // AI web evidence resolved to barangays (ACTIVE items only). Supporting
-    // context for the route explanation/ranking — never a hard block (only a
-    // confirmed official closure can block). Degrades to 0 when unavailable.
-    const store = evidenceStoreRef.current;
-    const webEvidenceByBarangay = store ? evidenceByBarangay(store.evidence()) : null;
     return {
       riskByBarangay: controller ? (psgc: string) => controller.riskFor(psgc) : undefined,
       reportCountByBarangay: controller
         ? (psgc: string) => controller.reportCountFor(psgc)
-        : undefined,
-      webEvidenceCountByBarangay: webEvidenceByBarangay
-        ? (psgc: string) =>
-            activeEvidenceCountFor(webEvidenceByBarangay.get(psgc) ?? [], psgc)
         : undefined,
       closedBarangays: controller?.closedBarangays(),
       trend: controller?.overallTrend(),
@@ -1817,17 +1934,17 @@ export function MapView({
       setRouteOptions(options);
 
       // Preserve an explicit manual selection when it still exists; otherwise
-      // select the recommended (first, best-ranked) option.
+      // select the validated recommendation, or Route B when none qualifies.
       const preserved =
         preserveSelectedId != null &&
         options.some((o) => o.candidate.id === preserveSelectedId)
           ? preserveSelectedId
           : null;
-      const nextId = preserved ?? options[0]?.candidate.id ?? null;
+      const nextId = preserved ?? getInitialRouteSelection(options)?.candidate.id ?? null;
       setSelectedRouteId(nextId);
 
-      if (nextId) {
-        managerRef.current?.showRoutePreview?.(previewRoutesFor(options), nextId, [
+      if (options.length > 0) {
+        managerRef.current?.showRoutePreview?.(previewRoutesFor(options), nextId ?? '', [
           [origin.coord[0], origin.coord[1]],
           [destination.coord[0], destination.coord[1]],
         ]);
@@ -1876,20 +1993,19 @@ export function MapView({
       selectedRouteId != null &&
       reranked.some((o) => o.candidate.id === selectedRouteId)
         ? selectedRouteId
-        : (reranked[0]?.candidate.id ?? null);
+        : (getInitialRouteSelection(reranked)?.candidate.id ?? null);
     setSelectedRouteId(keep);
-    if (keep) {
-      managerRef.current?.updateRoutePreviewSelection?.(previewRoutesFor(reranked), keep);
-    }
+    managerRef.current?.updateRoutePreviewSelection?.(previewRoutesFor(reranked), keep ?? '');
   };
 
   /** Maps compared options to the MapManager preview-route shape (id + geometry). */
   const previewRoutesFor = (
     options: readonly RouteOption[],
-  ): Array<{ id: string; geometry: ReadonlyArray<[number, number]> }> =>
+  ): PreviewRoute[] =>
     options.map((o) => ({
       id: o.candidate.id,
       geometry: o.candidate.route as ReadonlyArray<[number, number]>,
+      markers: demoMarkersFor(o.candidate),
     }));
 
   /**
@@ -2148,6 +2264,7 @@ export function MapView({
       lifecycle: report.lifecycle ?? 'ACTIVE',
       confirmationCount: report.confirmationCount ?? 0,
       lastConfirmedAt: report.lastConfirmedAt ?? null,
+      resolvedAt: report.resolvedAt ?? null,
     };
   };
 
@@ -2183,6 +2300,7 @@ export function MapView({
       lifecycle: data.lifecycle,
       confirmationCount: data.confirmationCount,
       lastConfirmedAt: data.lastConfirmedAt ?? undefined,
+      resolvedAt: data.resolvedAt ?? undefined,
     };
     if (data.kind !== 'community' || !data.id) return base;
     const id = data.id;
@@ -2337,17 +2455,42 @@ export function MapView({
    * don't re-query the environment, then starts the simulator on the route.
    */
   const handleStartRoute = (option: RouteOption): void => {
+    if (findingRoutes || option.candidate.id !== selectedRouteId) return;
+    // Recheck the live snapshot at Start so a changed flood signal cannot leave
+    // a different automatic choice or a newly closed route ready to navigate.
+    const refreshed = compareRoutes(routeOptions.map((o) => o.candidate), routePlanningContext(), routePreference);
+    const current = refreshed.find((o) => o.candidate.id === option.candidate.id);
+    if (!current || isRouteStartBlocked(current) ||
+      (!manualRouteSelectionRef.current && getInitialRouteSelection(refreshed)?.candidate.id !== current.candidate.id)) {
+      setRouteOptions(refreshed);
+      setSelectedRouteId(null);
+      managerRef.current?.updateRoutePreviewSelection?.(previewRoutesFor(refreshed), '');
+      setTripNotice('Route conditions changed. Review the suggestions and select a route again.');
+      return;
+    }
+    option = current;
     const manager = managerRef.current;
     const candidate = option.candidate;
-    // Preserve the reroute demo ONLY for the flagship PITXâ†’MOA primary route.
-    const isDemoRoute = candidate.id === 'pitx-moa-primary';
-    activeHazardsRef.current = candidate.hazards;
+    // All bundled journey choices can join the verified road detours.
+    const isDemoRoute = candidate.id.startsWith('pitx-moa-');
+    rerouteGenerationRef.current += 1;
+    requestedReroutesRef.current.clear();
+    reroutePendingRef.current = false;
+    rerouteAttemptMRef.current = -Infinity;
+    continuedHazardsRef.current.clear();
+    routeOffersRef.current = [];
+    setRouteOffers([]);
+    setRerouteStatus(null);
+    locatedFloodsRef.current = [...collectRouteFloods(routeOptions.map((o) => o.candidate)), ...reportedFloodsRef.current];
+    floodPointsRef.current = locatedFloodsRef.current.map((flood) => flood.position);
+    activeHazardsRef.current = floodHazardsOnRoute(candidate.route, locatedFloodsRef.current);
     activeReroutesRef.current = isDemoRoute ? PITX_TO_MOA_REROUTES : [];
     activeBaseRouteRef.current = measureRoute(candidate.route);
     activeBaseManeuversRef.current = candidate.maneuvers;
-    dismissedRef.current = new Set();
+    activeDurationSRef.current = candidate.durationS;
     setDriveRisk(option);
     setTripStage('navigating');
+    voiceAgentRef.current?.start();
     // Remove the flat route-preview overlays before the Driver Mode 3D camera.
     manager?.clearRoutePreview?.();
 
@@ -2361,13 +2504,15 @@ export function MapView({
     setDriveRadiusState(250);
     manager.setDriveCamera?.('driver');
     manager.setDriveRadius?.(250);
-    const markers = isDemoRoute ? DRIVE_HAZARD_MARKERS : [];
+    const markers = demoMarkersFor(candidate);
     manager.startDriveView(candidate.route, markers);
     runSimulator(manager, candidate.route, candidate.maneuvers);
   };
 
   /** Returns to the search step, clearing the comparison; reframes the trip. */
   const handleTripBack = (): void => {
+    setPopup(null);
+    handleMapModeChange('route');
     setRouteOptions([]);
     setSelectedRouteId(null);
     setPickTarget(null);
@@ -2409,7 +2554,9 @@ export function MapView({
    * search panel. Secondary state is never destroyed â€” e.g. a ready route stays
    * in memory and is reachable via the compact "Route ready" chip.
    */
-  const primaryLeftPanel: PrimaryLeftPanel = resolvePrimaryLeftPanel({
+  // Report details temporarily own the rail/sheet; closing restores the trip
+  // or historical panel with its existing state.
+  const primaryLeftPanel: PrimaryLeftPanel = popup?.kind === 'report' ? null : resolvePrimaryLeftPanel({
     isError: phase === 'error',
     driving,
     barangaySelected: popup?.kind === 'barangay',
@@ -2424,7 +2571,7 @@ export function MapView({
    * the route is never lost â€” tapping it swaps Compare back in.
    */
   const selectedRouteOption =
-    routeOptions.find((o) => o.candidate.id === selectedRouteId) ?? routeOptions[0] ?? null;
+    routeOptions.find((o) => o.candidate.id === selectedRouteId) ?? null;
   const showRouteReadyChip =
     !driving &&
     phase !== 'error' &&
@@ -2437,36 +2584,53 @@ export function MapView({
    * The new route continues on the current road to the turn-off, then onto
    * the flood-avoiding road; directions and ETA update to it.
    */
-  const handleReroute = (): void => {
+  const handleReroute = (chosen?: RerouteOffer): void => {
     const manager = managerRef.current;
     const frame = lastFrameRef.current;
-    if (!offer || !manager || !frame) return;
+    const selected = chosen ?? offer;
+    if (!selected || !manager || !frame) return;
     // Re-evaluate at tap time: the car kept moving since the card rendered.
-    const fresh = offerFor(frame, offer.reroute.hazardId);
-    if (!fresh) return; // Too late for any turn-off; nothing to switch to.
-    const next = stitchReroute(
+    const fresh = rebaseMovingReroute(selected, activeBaseRouteRef.current, activeBaseManeuversRef.current, frame.traveledM, floodPointsRef.current);
+    if (!fresh) {
+      requestedReroutesRef.current.delete(selected.reroute.hazardId);
+      void requestDynamicReroute(selected.reroute.hazardId);
+      return;
+    }
+    const next = fresh.directRoute ?? stitchReroute(
       activeBaseRouteRef.current,
       activeBaseManeuversRef.current,
       fresh.reroute,
       frame.traveledM,
     );
     if (!next) return; // Not joinable on real roads (never offered in practice).
+    const updated = driveRisk ? compareRoutes([{
+      ...driveRisk.candidate, id: `${driveRisk.candidate.id}-rerouted`, label: 'Flood-avoiding reroute',
+      route: next.route, maneuvers: next.maneuvers, distanceM: next.lengthM,
+      durationS: fresh.durationS ?? next.lengthM / SIM_SPEED_MPS, hazards: [], demoFloods: [],
+    }], routePlanningContext())[0] : null;
+    if (!avoidsFloodPoints(next.route, floodPointsRef.current) ||
+      (updated && (isRouteStartBlocked(updated) || updated.risk.level === 'REPORTED_FLOODING' || updated.risk.level === 'CONFIRMED_NOT_PASSABLE'))) {
+      requestedReroutesRef.current.delete(fresh.reroute.hazardId);
+      setOffer(null);
+      void requestDynamicReroute(fresh.reroute.hazardId);
+      return;
+    }
+    rerouteGenerationRef.current += 1;
+    setRerouteStatus(null);
+    routeOffersRef.current = [];
+    setRouteOffers([]);
+    voiceAgentRef.current?.cancelPending();
     // The reroute excludes every demo hazard, so none remain ahead on it.
-    activeHazardsRef.current = [];
+    activeHazardsRef.current = floodHazardsOnRoute(next.route, locatedFloodsRef.current);
     activeReroutesRef.current = [];
-    offerKeyRef.current = '';
     navKeyRef.current = '';
     setOffer(null);
+    if (updated) setDriveRisk(updated);
+    activeBaseRouteRef.current = measureRoute(next.route);
+    activeBaseManeuversRef.current = next.maneuvers;
+    activeDurationSRef.current = fresh.durationS ?? next.lengthM / SIM_SPEED_MPS;
     manager.setDriveRoute?.(next.route);
     runSimulator(manager, next.route, next.maneuvers);
-  };
-
-  /** Keeps the current route; no more reroutes for this hazard. */
-  const handleKeepRoute = (): void => {
-    if (!offer) return;
-    dismissedRef.current.add(offer.reroute.hazardId);
-    offerKeyRef.current = '';
-    setOffer(null);
   };
 
   const handleDriveCamera = (mode: DriveCameraMode): void => {
@@ -2478,7 +2642,11 @@ export function MapView({
     managerRef.current?.setDriveRadius?.(radius);
   };
   // Stop the animation loop if the map unmounts mid-drive.
-  useEffect(() => () => simulatorRef.current?.stop(), []);
+  useEffect(() => () => {
+    rerouteGenerationRef.current += 1;
+    simulatorRef.current?.stop();
+    voiceAgentRef.current?.stop();
+  }, []);
 
   // Show/hide the HISTORICAL evidence overlay. Context only — this toggles ONLY
   // the historical layer and never current risk/closures. Markers appear only
@@ -2531,16 +2699,15 @@ export function MapView({
         setLayout('barangayFloodRisk-outline');
         break;
       case 'floodSusceptibility':
-        // "Historical Flood Risk" now primarily renders the DERIVED per-barangay
-        // Project NOAH / Phil-LiDAR susceptibility layer, plus the legacy
-        // modeled hazard polygons + city summary as supporting context.
-        safeSet('floodSusceptibility');
-        safeSet('cityFloodSummary');
+// Historical risk uses the derived city summaries at NCR scope and
+        // individual barangay classes when drilled down. Legacy demo layers
+        // stay hidden; the scope effect chooses the appropriate surface.
         setLayout(HISTORICAL_RISK_FILL_LAYER_ID);
         setLayout(HISTORICAL_RISK_OUTLINE_LAYER_ID);
         setLayout(HISTORICAL_SELECTED_LAYER_ID);
         setLayout(HISTORICAL_LABEL_LAYER_ID);
         setLayout(HISTORICAL_LABEL_SELECTED_LAYER_ID);
+        setLayout(CITY_HISTORICAL_FILL_LAYER_ID);
         setLayout(CITY_BOUNDARY_LAYER_ID);
         setLayout(CITY_BOUNDARY_SELECTED_LAYER_ID);
         if (visible) {
@@ -2592,36 +2759,24 @@ export function MapView({
       : null;
   // `riskRevision` is intentionally read so the panel re-derives on repaint.
   void riskRevision;
-  // AI web-evidence summary for the selected barangay (presentation-only; kept
-  // SEPARATE from current risk — it never changes the risk class). Derived from
-  // the evidence store at render time so it tracks the latest discovery cycle.
-  const barangayWebEvidence = ((): BarangayWebEvidenceSummary | null => {
-    if (popup?.kind !== 'barangay') return null;
-    const store = evidenceStoreRef.current;
-    if (!store) return null;
-    const snap = store.snapshot();
-    const here = snap.evidence.filter(
-      (e) => e.psgc === popup.psgc && e.status === 'ACTIVE',
-    );
-    const rank: Record<string, number> = { UNVERIFIED: 0, CORROBORATED: 1, OFFICIAL: 2 };
-    let strongest: 'UNVERIFIED' | 'CORROBORATED' | 'OFFICIAL' | null = null;
-    for (const e of here) {
-      if (strongest === null || rank[e.confidence] > rank[strongest]) {
-        strongest = e.confidence;
-      }
-    }
-    return {
-      count: here.length,
-      strongestConfidence: strongest,
-      agentUnavailable: snap.agentUnavailable,
-    };
-  })();
-
   /** Timeline changes update the open panel + map coloring for the step. */
   const handleTimelineStep = (step: TimelineStep): void => {
     setTimelineStep(step);
     riskControllerRef.current?.setTimelineStep?.(step);
   };
+
+  useEffect(() => {
+    const map = managerRef.current?.getMap?.() ?? null;
+    if (!map) return;
+    setHistoricalHover(null);
+    setCityHover(null);
+    applyHistoricalCityScope(map, historicalFilter);
+    const overview = historicalFilter.view === 'ncr' || !historicalFilter.cityPsgc;
+    setLayoutVisibility(map, CITY_HISTORICAL_FILL_LAYER_ID, historicalVisible && overview);
+    for (const id of [HISTORICAL_RISK_FILL_LAYER_ID, HISTORICAL_RISK_OUTLINE_LAYER_ID]) {
+      setLayoutVisibility(map, id, historicalVisible && !overview);
+    }
+  }, [historicalVisible, historicalFilter, phase]);
 
   /**
    * Reapply the historical filter to the map whenever it changes. Writing the
@@ -2648,8 +2803,13 @@ export function MapView({
     //     at NCR overview) AND the active risk filter, so the visible labels
     //     stay consistent with the panel count + fill emphasis.
     applyBarangayLabelScope(map, focusCity, historicalFilter.risk);
+  }, [historicalFilter]);
 
-    // 2) Camera framing: zoom to the selected city / barangay, or back to the
+  // Risk-class changes repaint the layer without interrupting a pan/zoom.
+  useEffect(() => {
+    const map = managerRef.current?.getMap?.() ?? null;
+    if (!map) return;
+    // Camera framing: zoom to the selected city / barangay, or back to the
     //    NCR overview for the NCR view. Bounded padding + maxZoom keeps tiny
     //    barangays from over-zooming and large ones from under-zooming.
     const fit = (map as unknown as {
@@ -2669,7 +2829,21 @@ export function MapView({
     } catch {
       // Camera framing is best-effort; emphasis already applied.
     }
-  }, [historicalFilter]);
+  }, [historicalFilter.view, historicalFilter.cityPsgc, historicalFilter.barangayPsgc]);
+
+  /**
+   * Leaving the Barangay drill-down (breadcrumb back to City or NCR) closes the
+   * open barangay panel, so its highlight/label clear and the city returns to
+   * its normal per-barangay colors.
+   */
+  const prevHistoricalViewRef = useRef(historicalFilter.view);
+  useEffect(() => {
+    const prev = prevHistoricalViewRef.current;
+    prevHistoricalViewRef.current = historicalFilter.view;
+    if (prev === 'barangay' && historicalFilter.view !== 'barangay') {
+      setPopup((p) => (p?.kind === 'barangay' ? null : p));
+    }
+  }, [historicalFilter.view]);
 
   /**
    * Keep the historical layer's SELECTED (strong-outline) barangay in sync with
@@ -2721,7 +2895,11 @@ export function MapView({
     const m = map as { setFilter?: (id: string, filter: unknown) => void };
     if (typeof m.setFilter !== 'function') return;
     try {
-      m.setFilter(HISTORICAL_LABEL_LAYER_ID, cityLabelFilter(cityPsgc, risk));
+      const scope = historicalFilterRef.current;
+      m.setFilter(HISTORICAL_LABEL_LAYER_ID,
+        scope.view === 'barangay' && scope.barangayPsgc
+          ? ['==', ['get', 'psgc'], scope.barangayPsgc]
+          : cityLabelFilter(cityPsgc, risk));
     } catch {
       // Label scoping is best-effort; the fill/hover/click still work.
     }
@@ -2734,6 +2912,8 @@ export function MapView({
    * the Historical layer is visible + the user is in a city-capable view.
    */
   const handleCityMapSelect = (cityPsgc: string): void => {
+    if (!historicalVisible || (historicalFilter.view !== 'ncr' && historicalFilter.cityPsgc)) return;
+    setPopup(null);
     setHistoricalFilter((prev) => ({
       ...prev,
       view: 'city',
@@ -2743,12 +2923,68 @@ export function MapView({
   };
   cityClickHandlerRef.current = handleCityMapSelect;
 
+  const selectHistoricalBarangay = (psgc: string): void => {
+    const record = historicalRiskByBarangay.get(psgc);
+    if (!record) return;
+    keepHistoricalHover();
+    setHistoricalHover(null);
+    setCityHover(null);
+    setHistoricalFilter({ view: 'barangay', cityPsgc: record.cityPsgc, barangayPsgc: psgc, risk: 'all' });
+    setInsightsTab('historical');
+    setInsightsSheet('half');
+    setPopup({ kind: 'barangay', psgc });
+  };
+  const selectHistoricalEvidence = (item: (typeof historicalFloodEvidence)[number]): void => {
+    if (item.coordinates) {
+      const manager = managerRef.current;
+      const map = manager?.getMap?.() as { flyTo?: (options: unknown) => void } | null;
+      const width = containerRef.current?.clientWidth || window.innerWidth;
+      const height = containerRef.current?.clientHeight || window.innerHeight;
+      const desktop = width >= 768;
+      const options = {
+        center: [...item.coordinates],
+        zoom: 15.5,
+        duration: 1000,
+        // Keep the selected point visible beside the panel / above the mobile sheet.
+        offset: desktop
+          ? [Math.min(200, width * 0.2), 0]
+          : [0, -Math.min(160, height * 0.2)],
+      };
+      if (manager?.flyTo) manager.flyTo(options);
+      else map?.flyTo?.(options);
+    }
+    setPopup({
+      kind: 'historical',
+      evidenceId: item.id,
+      props: {
+        title: item.title,
+        city: item.city,
+        eventLabel: item.eventLabel,
+        eventDate: item.eventDate,
+        publicationDate: item.publicationDate,
+        floodCondition: item.floodCondition,
+        reportedDepth: item.reportedDepth,
+        passability: item.passability,
+        sourceName: item.sourceName,
+        sourceUrl: item.sourceUrl,
+        locationPrecision: item.locationPrecision,
+      },
+      lngLat: item.coordinates
+        ? { lng: item.coordinates[0], lat: item.coordinates[1] }
+        : undefined,
+    });
+  };
+  evidenceSelectRef.current = (id) => {
+    const item = historicalFloodEvidence.find((record) => record.id === id);
+    if (item) selectHistoricalEvidence(item);
+  };
+
   /**
    * Visual co-existence when BOTH flood layers are enabled: the historical fill
    * recedes to a faint overlay while the user's focus is Current (a barangay is
-   * open on the Current tab), so the indigo/violet historical fill and the
-   * greenâ†’red current fill never stack into a muddy double-fill. When only
-   * Historical is on â€” or the Historical tab is active â€” it returns to its full
+   * open on the Current tab), so the warm historical fill and the
+   * green→red current fill never stack into a muddy double-fill. When only
+   * Historical is on — or the Historical tab is active — it returns to its full
    * fill. Paint-only; no data/feature-state/classification is touched.
    */
   useEffect(() => {
@@ -2760,28 +2996,31 @@ export function MapView({
     const barangayOpen = popup?.kind === 'barangay';
     // When both layers are on, exactly ONE is the primary fill; the other
     // recedes so the two color families never stack into muddy colors:
-    //   focus Current (default / Current tab) â†’ historical dimmed
-    //   focus Historical (Historical tab open) â†’ current dimmed
-    const historicalIsFocus = bothOn && barangayOpen && insightsTab === 'historical';
-    const dimHistorical = bothOn && !historicalIsFocus;
+    //   focus Current (Current tab) → current keeps its fill
+    //   focus Historical (Historical tab open or Explore) → current fill hidden
+    //   drilled into a city/barangay in the Historical panel with no barangay
+    //   panel open → historical is the focus (its city colors come back)
+    const historicalIsFocus =
+      bothOn &&
+      (barangayOpen ? insightsTab === 'historical' : true);
     const dimCurrent = historicalIsFocus;
 
     setPaint(
       map,
       HISTORICAL_RISK_FILL_LAYER_ID,
       'fill-opacity',
-      dimHistorical ? historicalFillOpacityDimmedExpression() : historicalFillOpacityExpression(),
+      historicalFillOpacityExpression(),
     );
     setPaint(
       map,
       BARANGAY_RISK_FILL_LAYER_ID,
       'fill-opacity',
-      dimCurrent ? barangayRiskFillOpacityDimmedExpression() : barangayRiskFillOpacityExpression(),
+      dimCurrent ? 0 : barangayRiskFillOpacityExpression(),
     );
-  }, [floodRiskVisible, historicalVisible, insightsTab, popup]);
+  }, [floodRiskVisible, historicalVisible, insightsTab, popup, historicalFilter.view]);
 
   return (
-    <div className="baharoute-map-view" data-testid="map-view">
+    <div className="baharoute-map-view" data-testid="map-view" data-control-panel={controlPanel ?? undefined}>
       <div
         ref={containerRef}
         className="baharoute-map"
@@ -2816,23 +3055,37 @@ export function MapView({
       {driving && nav && (
         <DrivingHud
           nav={nav}
+          voiceStatus={voiceStatus}
+          onVoiceToggle={() => voiceAgentRef.current?.setEnabled(voiceStatus !== 'ready')}
           camera={driveCamera}
           radius={driveRadius}
+          playbackRate={drivePlaybackRate}
+          onPlaybackRateChange={handleDrivePlaybackRate}
           onCameraChange={handleDriveCamera}
           onRadiusChange={handleDriveRadius}
           onStop={stopDrive}
         >
-          {offer && nav.hazard ? (
+          {nav.hazard && !continuedHazardsRef.current.has(nav.hazard.id) ? (
             <RerouteOfferCard
-              offer={offer}
-              hazard={nav.hazard}
-              toHazardM={nav.toHazardM}
-              onReroute={handleReroute}
-              onKeep={handleKeepRoute}
+              offer={offer} alternatives={routeOffers} status={rerouteStatus}
+              hazard={nav.hazard} toHazardM={nav.toHazardM} onReroute={handleReroute}
+              onKeep={() => {
+                if (nav.hazard?.passability !== 'passable') return;
+                continuedHazardsRef.current.add(nav.hazard.id);
+                rerouteGenerationRef.current += 1;
+                routeOffersRef.current = [];
+                setRouteOffers([]);
+                setOffer(null);
+                setRerouteStatus(null);
+              }}
+              onReview={stopDrive}
+              onRetry={() => {
+                if (!nav.hazard) return;
+                requestedReroutesRef.current.delete(nav.hazard.id);
+                void requestDynamicReroute(nav.hazard.id);
+              }}
             />
-          ) : (
-            driveRisk && <DriveRiskBanner option={driveRisk} status={riskStatus} />
-          )}
+          ) : driveRisk && <DriveRiskBanner option={driveRisk} status={riskStatus} />}
         </DrivingHud>
       )}
 
@@ -2852,7 +3105,10 @@ export function MapView({
           aria-label={mobileControlsOpen ? 'Close map controls' : 'Open map controls'}
           aria-expanded={mobileControlsOpen}
           aria-controls="map-control-items"
-          onClick={() => setMobileControlsOpen((open) => !open)}
+          onClick={() => {
+            setMobileControlsOpen((open) => !open);
+            setControlPanel(null);
+          }}
         >
           <span aria-hidden="true" className="baharoute-hamburger-icon">
             <span />
@@ -2868,27 +3124,9 @@ export function MapView({
           <div className="baharoute-control-card baharoute-control-card--single"><ViewModeControl is3D={is3D || driving} onToggle={handleViewModeToggle} /></div>
           <div className="baharoute-control-card baharoute-control-card--rotate"><RotateControl bearing={bearing} onRotate={handleRotateBy} onResetNorth={handleResetNorth} /></div>
           <div className="baharoute-control-card baharoute-control-card--single"><LocationControl onActivate={handleLocationArrow} /></div>
-          <div className="baharoute-control-card baharoute-control-card--single">
-            <button type="button" className="baharoute-report-flood baharoute-focus-ring" aria-pressed={reportPickActive} title="Report flooding (adds an unverified community report)" aria-label="Report flooding - adds an unverified community report at a point you tap" onClick={handleReportFloodingToggle}>
-              <span aria-hidden="true">!</span>
-            </button>
-          </div>
-          <div className="baharoute-control-card baharoute-control-card--single">
-            <button
-              type="button"
-              className="baharoute-historical-toggle baharoute-focus-ring"
-              aria-pressed={showHistoricalEvidence}
-              title="Historical Flood Evidence (demo / research use only — not current conditions)"
-              aria-label="Historical Flood Evidence — demo research records, not current conditions"
-              data-testid="historical-evidence-toggle"
-              onClick={() =>
-                handleMapModeChange(mapMode === 'historical' ? 'route' : 'historical')
-              }
-            >
-              <span aria-hidden="true">H</span>
-            </button>
-          </div>
           <CamButton
+            open={controlPanel === 'cameras'}
+            onOpenChange={(open) => setControlPanel(open ? 'cameras' : null)}
             loadCameras={async (signal) => {
               const snapshot = loadCameraSnapshot
                 ? await loadCameraSnapshot(signal)
@@ -2897,7 +3135,10 @@ export function MapView({
             }}
             onSelectCamera={handleSelectCameraFromList}
           />
-          <LayersButton>
+          <LayersButton
+            open={controlPanel === 'layers'}
+            onOpenChange={(open) => setControlPanel(open ? 'layers' : null)}
+          >
           <LayerControl
             layers={layers}
             groups={layerGroups}
@@ -2940,6 +3181,7 @@ export function MapView({
         ) &&
         (floodRiskVisible || historicalVisible) && (
           <MapLegend
+            defaultExpanded={historicalVisible}
             showCurrent={floodRiskVisible}
             showHistorical={historicalVisible}
           />
@@ -3029,6 +3271,7 @@ export function MapView({
             onPickOnMap={handlePickOnMap}
             pickTarget={pickTarget}
             onFindRoutes={handleFindRoutes}
+            autoFindOnMount={false}
             busy={findingRoutes}
             locationStatus={locationStatus}
           />
@@ -3091,23 +3334,25 @@ export function MapView({
           <HistoricalExplorePanel
             filter={historicalFilter}
             onFilterChange={setHistoricalFilter}
-            onOpenBarangay={(psgc) => {
-              setInsightsTab('historical');
-              setInsightsSheet('half');
-              setPopup({ kind: 'barangay', psgc, lngLat: undefined });
-            }}
+            onOpenBarangay={selectHistoricalBarangay}
           />
         </div>
       )}
 
       {/* Historical hover tooltip: barangay name / city / historical class.
           Shown only while the Historical layer is visible and a barangay is
-          hovered; follows the cursor. Non-interactive. */}
+          hovered; stays anchored while hovered and opens historical details when clicked. */}
       {phase === 'ready' && !driving && historicalVisible && historicalHover && (
-        <div
-          className="baharoute-hist-tooltip"
+        <button
+          className="baharoute-hist-tooltip baharoute-focus-ring"
           data-testid="historical-hover-tooltip"
-          role="tooltip"
+          type="button"
+          onMouseEnter={keepHistoricalHover}
+          onMouseLeave={dismissHistoricalHover}
+          onFocus={keepHistoricalHover}
+          onBlur={dismissHistoricalHover}
+          onClick={() => selectHistoricalBarangay(historicalHover.psgc)}
+          aria-label={`View historical details for ${historicalHover.name}`}
           style={{
             left: historicalHover.point.x,
             top: historicalHover.point.y,
@@ -3121,7 +3366,8 @@ export function MapView({
           >
             Historical Flood Susceptibility: {historicalHover.cls}
           </span>
-        </div>
+          <span className="baharoute-hist-tooltip__action">View historical details →</span>
+        </button>
       )}
 
       {/* City hover tooltip (city name + barangay count). Lightweight; shown
@@ -3129,20 +3375,29 @@ export function MapView({
       {phase === 'ready' &&
         !driving &&
         historicalVisible &&
-        historicalFilter.view === 'city' &&
         cityHover &&
         !historicalHover && (
-          <div
-            className="baharoute-hist-tooltip"
+          <button
+            className="baharoute-hist-tooltip baharoute-focus-ring"
             data-testid="city-hover-tooltip"
-            role="tooltip"
+            type="button"
+            onMouseEnter={keepHistoricalHover}
+            onMouseLeave={dismissHistoricalHover}
+            onFocus={keepHistoricalHover}
+            onBlur={dismissHistoricalHover}
+            onClick={() => handleCityMapSelect(cityHover.cityPsgc)}
+            aria-label={`Explore historical risk in ${cityHover.cityName}`}
             style={{ left: cityHover.point.x, top: cityHover.point.y }}
           >
             <span className="baharoute-hist-tooltip__name">{cityHover.cityName}</span>
             <span className="baharoute-hist-tooltip__city">
               {cityHover.barangayCount} barangays
             </span>
-          </div>
+            <span style={{ color: HISTORICAL_RISK_COLORS[cityHover.riskClass].hex }}>
+              {cityHover.riskClass} historical risk (dominant city class)
+            </span>
+            <span className="baharoute-hist-tooltip__action">Explore city →</span>
+          </button>
         )}
 
       {/* When BOTH Flood Risk and Historical are on and live current-risk data
@@ -3182,7 +3437,6 @@ export function MapView({
             tab={insightsTab}
             onTabChange={setInsightsTab}
             current={barangayPanelProps}
-            webEvidence={barangayWebEvidence}
             historical={historicalRiskByBarangay.get(popup.psgc) ?? null}
             timelineStep={timelineStep}
             onTimelineStep={handleTimelineStep}
@@ -3224,6 +3478,7 @@ export function MapView({
             evidence={historicalFloodEvidence}
             onAgentRunChange={setHistoricalAgentRan}
             onClose={() => {
+              setPopup((current) => current?.kind === 'historical' ? null : current);
               setShowHistoricalEvidence(false);
               setHistoricalAgentRan(false);
               setMapMode('route');
@@ -3237,27 +3492,8 @@ export function MapView({
                 );
               }
             }}
-            onSelect={(item) => {
-              setPopup({
-                kind: 'historical',
-                props: {
-                  title: item.title,
-                  city: item.city,
-                  eventLabel: item.eventLabel,
-                  eventDate: item.eventDate,
-                  publicationDate: item.publicationDate,
-                  floodCondition: item.floodCondition,
-                  reportedDepth: item.reportedDepth,
-                  passability: item.passability,
-                  sourceName: item.sourceName,
-                  sourceUrl: item.sourceUrl,
-                  locationPrecision: item.locationPrecision,
-                },
-                lngLat: item.coordinates
-                  ? { lng: item.coordinates[0], lat: item.coordinates[1] }
-                  : undefined,
-              });
-            }}
+            selectedId={popup?.kind === 'historical' ? popup.evidenceId : null}
+            onSelect={selectHistoricalEvidence}
           />
         </div>
       )}
@@ -3278,8 +3514,6 @@ export function MapView({
           </button>
           {popup.kind === 'report' ? (
             <ReportPopup {...popup.props} />
-          ) : popup.kind === 'evidence' ? (
-            <EvidencePopup {...popup.props} />
           ) : popup.kind === 'historical' ? (
             <HistoricalEvidencePopup {...popup.props} />
           ) : (

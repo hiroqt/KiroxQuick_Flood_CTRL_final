@@ -6,7 +6,8 @@
 //
 // This layer is INDEPENDENT of the current-risk layer:
 //   - separate GeoJSON source + fill layer + feature-state key ('histRisk'),
-//   - a distinct INDIGO/VIOLET color ramp (current risk is a green→red ramp),
+//   - its own warm yellow→orange→red ramp + legend (current risk has its own
+//     ramp with a green low state); the panel tabs keep them separate,
 //   - painted from a STATIC preprocessed dataset (no live API calls),
 //   - a barangay may be historically High while currently Low, and vice versa;
 //     the two are never merged (see docs/FLOOD_SEMANTICS.md).
@@ -16,7 +17,7 @@
 // wrappers use the same minimal map adapters as the current-risk layer.
 
 import { APP_LAYER_SLOT, type MapLayerSpec } from './LayerRegistry';
-import { HISTORICAL_RISK_COLORS } from '../map/basemap/colorTokens';
+import { HISTORICAL_INK, HISTORICAL_RISK_COLORS } from '../map/basemap/colorTokens';
 import { ncrBarangays, ncrBarangayInfos } from '../data/geojson/ncrBarangays';
 import {
   historicalRiskByBarangay,
@@ -34,6 +35,24 @@ export const HISTORICAL_RISK_FILL_LAYER_ID = 'historicalFloodRisk' as const;
 export const HISTORICAL_RISK_OUTLINE_LAYER_ID = 'historicalFloodRisk-outline';
 /** Feature-state key carrying the derived historical class per barangay. */
 export const HISTORICAL_RISK_STATE_KEY = 'histRisk';
+/**
+ * GeoJSON PROPERTY carrying the derived historical class, baked into every
+ * barangay feature at source-build time. The class is STATIC, so a property is
+ * the reliable carrier: Mapbox silently DROPS `setFeatureState` calls made
+ * before a GeoJSON source has parsed its features (and a hidden layer's source
+ * may not have loaded yet), which left every polygon on the faint Unknown
+ * fallback. Paint expressions read feature-state first, then this property.
+ */
+export const HISTORICAL_CLASS_PROP = 'histClass';
+
+/** The historical class for paint: feature-state if set, else the property. */
+function historicalClassExpr(): unknown {
+  return [
+    'coalesce',
+    ['feature-state', HISTORICAL_RISK_STATE_KEY],
+    ['get', HISTORICAL_CLASS_PROP],
+  ];
+}
 /**
  * Feature-state key marking whether a barangay is EMPHASIZED under the active
  * filter. `true` = matches (emphasized), `false` = does not match (DIMMED, not
@@ -58,8 +77,8 @@ export const HISTORICAL_LABEL_MIN_ZOOM = 12.5;
  *   'focus' — the selected barangay (Barangay focus mode)
  *   'in'    — inside the active scope AND matches the risk filter (full color)
  *   'dim'   — inside the active scope but filtered out / not the focus (muted)
- *   'out'   — outside the active scope (heavily muted context)
- * Every barangay ALWAYS keeps its class color; only opacity changes by tier.
+ *   'out'   — outside the active LGU (no risk fill)
+ * In-scope barangays keep their class colors; surrounding LGUs stay unpainted.
  */
 export const HISTORICAL_EMPHASIS_STATE_KEY = 'histEmphasis';
 
@@ -152,7 +171,8 @@ export function shownCount(filter: HistoricalFilterState): number {
  *   City view     : in-scope = the selected city's barangays; others are 'out'.
  *                   Within the city, non-matching risk → 'dim'.
  *   Barangay view : the selected barangay is 'focus'; other barangays in its
- *                   city are 'dim'; barangays outside that city are 'out'.
+ *                   city are 'out' once a barangay is selected;
+ *                   barangays outside that city are 'out'.
  *
  * A matching in-scope barangay is 'in'. Every tier still renders the barangay's
  * class color — only opacity differs (dim-not-hide is preserved).
@@ -166,11 +186,14 @@ export function emphasisFor(
   const matchesRisk = filter.risk === 'all' || histClass === filter.risk;
 
   if (filter.view === 'barangay') {
-    // Scope is the selected city (parent context); focus is the barangay.
+    // Before a barangay is chosen, show its parent LGU. Once selected,
+    // only that barangay keeps its risk fill.
     const inCity = filter.cityPsgc == null || cityPsgc === filter.cityPsgc;
     if (!inCity) return 'out';
-    if (filter.barangayPsgc != null && psgc === filter.barangayPsgc) return 'focus';
-    return 'dim';
+    if (filter.barangayPsgc != null) {
+      return psgc === filter.barangayPsgc ? 'focus' : 'out';
+    }
+    return matchesRisk ? 'in' : 'dim';
   }
 
   if (filter.view === 'city') {
@@ -201,14 +224,15 @@ export function computeEmphasisByBarangay(
 }
 
 /**
- * Data-driven fill color keyed on the historical feature-state `histRisk`.
- * Falls back to Unknown (never a classified level) when no state is set.
+ * Data-driven fill color keyed on the historical class (feature-state
+ * `histRisk`, else the baked `histClass` property). Falls back to Unknown
+ * (never a classified level) when neither is present.
  */
 export function historicalFillColorExpression(): unknown {
   const c = (k: HistoricalRiskClass): string => HISTORICAL_RISK_COLORS[k].hex;
   return [
     'match',
-    ['feature-state', HISTORICAL_RISK_STATE_KEY],
+    historicalClassExpr(),
     'High',
     c('High'),
     'Moderate',
@@ -224,35 +248,49 @@ export function historicalFillColorExpression(): unknown {
 /**
  * Fill opacity keyed on BOTH the emphasis state (`histShown`) and the class.
  *
- * DIM-NOT-HIDE: every barangay stays colored by its class in every view. A
- * barangay that does NOT match the active filter (city / barangay / risk) is
- * DIMMED to a faint fill rather than hidden, so users always see the full NCR
- * mosaic and can tell what was de-emphasized. Matching barangays get the full
- * class fill. Unknown is always faint (honest "no data") but never zero.
+ * Only the selected LGU is colored in City/Barangay views. Risk-filtered
+ * barangays within that LGU retain a readable fill; outside LGUs are unpainted.
  */
 export function historicalFillOpacityExpression(): unknown {
   const tier = ['feature-state', HISTORICAL_EMPHASIS_STATE_KEY];
-  const state = ['feature-state', HISTORICAL_RISK_STATE_KEY];
+  const state = historicalClassExpr();
   const isUnknown = ['any', ['==', state, 'Unknown'], ['==', state, null]];
-  // Full (in-scope) opacity ramp per zoom for classified classes.
-  const fullClass = ['interpolate', ['linear'], ['zoom'], 9, 0.5, 13, 0.42, 16, 0.34];
-  const focusClass = ['interpolate', ['linear'], ['zoom'], 9, 0.62, 13, 0.55, 16, 0.48];
-  return [
+  // Mapbox requires zoom at the top level of an interpolate expression.
+  // Keep classified context visible within the selected LGU.
+  const opacityAt = (full: number, focus: number): unknown => [
     'case',
-    // Selected barangay (Barangay focus): strongest fill.
-    ['==', tier, 'focus'],
-    ['case', isUnknown, 0.18, focusClass],
-    // Outside the active scope: heavily muted context (still colored).
-    ['==', tier, 'out'],
-    ['case', isUnknown, 0.02, 0.06],
-    // In scope but filtered out / not the focus: dimmed.
-    ['==', tier, 'dim'],
-    ['case', isUnknown, 0.04, 0.12],
-    // In scope + matching (or no state yet → treat as in-scope): full color.
-    isUnknown,
-    0.1,
-    fullClass,
+    ['==', tier, 'focus'], ['case', isUnknown, 0.3, focus],
+    ['==', tier, 'out'], 0,
+    ['==', tier, 'dim'], ['case', isUnknown, 0.22, 0.42],
+    isUnknown, 0.3,
+    full,
   ];
+  return ['interpolate', ['linear'], ['zoom'],
+    9, opacityAt(0.65, 0.75),
+    13, opacityAt(0.6, 0.7),
+    16, opacityAt(0.55, 0.65)];
+}
+
+/** Exclude neighboring LGUs from both rendering and polygon interaction. */
+export function applyHistoricalCityScope(
+  map: unknown,
+  filter: HistoricalFilterState,
+): void {
+  const scopedMap = map as { setFilter?: (id: string, filter: unknown) => void } | null | undefined;
+  if (typeof scopedMap?.setFilter !== 'function') return;
+  const cityScope = filter.view !== 'ncr' && filter.cityPsgc
+    ? ['==', ['get', 'cityPsgc'], filter.cityPsgc]
+    : null;
+  const scope = filter.view === 'barangay' && filter.barangayPsgc
+    ? ['all', ...(cityScope ? [cityScope] : []), ['==', ['get', 'psgc'], filter.barangayPsgc]]
+    : cityScope;
+  for (const id of [HISTORICAL_RISK_FILL_LAYER_ID, HISTORICAL_RISK_OUTLINE_LAYER_ID]) {
+    try {
+      scopedMap.setFilter(id, scope);
+    } catch {
+      // The style may still be loading; installation and the ready effect retry.
+    }
+  }
 }
 
 /** The historical source spec (barangay polygons, PSGC promoted to id). */
@@ -264,9 +302,20 @@ export interface HistoricalSourceSpec {
 
 /** Builds the historical barangay polygon source (PSGC as feature id). */
 export function buildHistoricalSource(): HistoricalSourceSpec {
+  const fc = ncrBarangays as unknown as GeoJSON.FeatureCollection;
   return {
     type: 'geojson',
-    data: ncrBarangays as unknown as GeoJSON.FeatureCollection,
+    data: {
+      type: 'FeatureCollection',
+      // Shallow-copy each feature with the derived class baked in as a property
+      // (same geometry + PSGC; the shared asset object is never mutated).
+      // Barangays absent from the dataset are Unknown — never Low.
+      features: fc.features.map((f) => {
+        const psgc = typeof f.properties?.psgc === 'string' ? f.properties.psgc : '';
+        const cls = historicalRiskByBarangay.get(psgc)?.historicalRiskClass ?? 'Unknown';
+        return { ...f, properties: { ...f.properties, [HISTORICAL_CLASS_PROP]: cls } };
+      }),
+    },
     promoteId: 'psgc',
   };
 }
@@ -304,27 +353,22 @@ export function buildHistoricalOutlineLayer(
     slot: APP_LAYER_SLOT,
     source: sourceId,
     paint: {
-      'line-color': '#3f2b96',
+      'line-color': HISTORICAL_INK.line,
       'line-dasharray': [1, 1.5],
-      'line-width': [
-        'case',
-        inScope,
-        ['interpolate', ['linear'], ['zoom'], 11, 0.3, 15, 0.9],
-        ['interpolate', ['linear'], ['zoom'], 11, 0.2, 15, 0.4],
-      ],
-      'line-opacity': [
-        'case',
-        inScope,
-        ['interpolate', ['linear'], ['zoom'], 11, 0, 13, 0.35, 16, 0.55],
-        ['interpolate', ['linear'], ['zoom'], 11, 0, 13, 0.1, 16, 0.16],
-      ],
+      'line-width': ['interpolate', ['linear'], ['zoom'],
+        11, ['case', inScope, 0.3, 0.2],
+        15, ['case', inScope, 0.9, 0.4]],
+      'line-opacity': ['interpolate', ['linear'], ['zoom'],
+        11, 0,
+        13, ['case', inScope, 0.35, 0.1],
+        16, ['case', inScope, 0.55, 0.16]],
     },
   };
 }
 
 /**
  * Builds the SELECTED-barangay highlight outline for the historical layer: a
- * strong, solid indigo border driven by the `histSelected` feature-state, so
+ * strong, solid dark border driven by the `histSelected` feature-state, so
  * exactly one barangay reads with a clearly stronger boundary than the normal
  * barangay outlines. Non-selected features render it fully transparent.
  */
@@ -338,7 +382,7 @@ export function buildHistoricalSelectedLayer(
     slot: APP_LAYER_SLOT,
     source: sourceId,
     paint: {
-      'line-color': '#2a1a6b',
+      'line-color': HISTORICAL_INK.strong,
       'line-width': ['case', selected, 3, 0],
       'line-opacity': ['case', selected, 1, 0],
     },
@@ -450,7 +494,7 @@ export function buildHistoricalBarangayLabelLayer(
       'text-line-height': 1.1,
     },
     paint: {
-      'text-color': '#2a1a6b',
+      'text-color': HISTORICAL_INK.strong,
       'text-halo-color': 'rgba(255,255,255,0.9)',
       'text-halo-width': 1.2,
       // Fade labels in just above the min zoom so they never pop abruptly.
@@ -487,7 +531,7 @@ export function buildHistoricalSelectedLabelLayer(
       'text-line-height': 1.1,
     },
     paint: {
-      'text-color': '#1b1147',
+      'text-color': HISTORICAL_INK.strongest,
       'text-halo-color': 'rgba(255,255,255,0.95)',
       'text-halo-width': 1.6,
     },
@@ -530,7 +574,7 @@ export function selectedLabelFilter(psgc: string | null): unknown {
  */
 export function historicalFillOpacityDimmedExpression(): unknown {
   const tier = ['feature-state', HISTORICAL_EMPHASIS_STATE_KEY];
-  const state = ['feature-state', HISTORICAL_RISK_STATE_KEY];
+  const state = historicalClassExpr();
   const isUnknown = ['any', ['==', state, 'Unknown'], ['==', state, null]];
   return [
     'case',

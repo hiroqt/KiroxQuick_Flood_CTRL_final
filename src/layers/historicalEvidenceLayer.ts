@@ -83,9 +83,9 @@ export function historicalEvidenceToGeoJSON(
  * mark (two horizontal drawers) so it reads as a historical/record marker,
  * clearly distinct from the community water teardrop and the official solid dot.
  */
-export function buildHistoricalIcon(size = 26): MarkerImage {
+export function buildHistoricalIcon(size = 64): MarkerImage {
   const w = size;
-  const h = Math.round(size * 1.25);
+  const h = Math.round(size * 1.3);
   const data = new Uint8ClampedArray(w * h * 4);
   const cx = w / 2;
   const cy = w / 2;
@@ -135,7 +135,7 @@ export function buildHistoricalIcon(size = 26): MarkerImage {
 }
 
 /** Registers the historical marker image (hasImage-guarded, style-reload safe). */
-export function registerHistoricalEvidenceImage(map: ImageRegistryMap, size = 26): void {
+export function registerHistoricalEvidenceImage(map: ImageRegistryMap, size = 64): void {
   if (map.hasImage(HISTORICAL_EVIDENCE_ICON_ID)) return;
   map.addImage(HISTORICAL_EVIDENCE_ICON_ID, buildHistoricalIcon(size), { pixelRatio: 2 });
 }
