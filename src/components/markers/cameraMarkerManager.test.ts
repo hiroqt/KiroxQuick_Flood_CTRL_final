@@ -147,3 +147,4 @@ describe('camera markers and popup media', () => {
     expect(popups[0].position).toEqual(cam.coordinates);
   });
 });
+
