@@ -111,6 +111,23 @@ describe('HistoricalTab', () => {
 describe('HistoricalExplorePanel', () => {
   const withFilter = (o: object) => ({ ...DEFAULT_HISTORICAL_FILTER, ...o });
 
+  it('minimizes and expands without changing the selected risk filter', async () => {
+    const onFilterChange = vi.fn();
+    render(<HistoricalExplorePanel
+      filter={{ ...DEFAULT_HISTORICAL_FILTER, risk: 'High' }}
+      onFilterChange={onFilterChange}
+    />);
+    await userEvent.click(screen.getByRole('button', { name: 'Minimize' }));
+    expect(screen.getByRole('button', { name: 'Expand' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByTestId('explore-risk-select')).not.toBeVisible();
+    expect(screen.getByText('Explore historical risk')).toBeVisible();
+    await userEvent.click(screen.getByRole('button', { name: 'Expand' }));
+    expect(screen.getByRole('button', { name: 'Minimize' })).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByTestId('explore-risk-select')).toBeVisible();
+    expect(screen.getByTestId('explore-risk-select')).toHaveValue('High');
+    expect(onFilterChange).not.toHaveBeenCalled();
+  });
+
   it('shows the NCR summary + distribution bar by default', () => {
     render(
       <HistoricalExplorePanel filter={DEFAULT_HISTORICAL_FILTER} onFilterChange={vi.fn()} />,
