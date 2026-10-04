@@ -18,7 +18,8 @@
 // picking are all injected/callbacks so the panel needs no real map and is
 // straightforward to test.
 
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type PointerEvent } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { usePanelDrag } from '../../hooks/usePanelDrag';
 import {
   searchPlaces as defaultSearchPlaces,
   isWithinNCR,
@@ -213,70 +214,24 @@ export function RouteSearchPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pairKey]);
 
-  const panelRef = useRef<HTMLElement>(null);
-  const dragStartRef = useRef<number | null>(null);
-  const initialOffsetRef = useRef(0);
-  const dragOffsetRef = useRef(0);
-  const panelHeightRef = useRef(300);
-  const [dragOffset, setDragOffset] = useState(0);
-  const [isClosed, setIsClosed] = useState(false);
-  const [isReopening, setIsReopening] = useState(false);
-
-  const startPanelDrag = (event: PointerEvent<HTMLElement>) => {
-    if (typeof window !== 'undefined' && window.matchMedia?.('(min-width: 768px)').matches) return;
-    if (event.pointerType === 'mouse' && event.button !== 0) return;
-    dragStartRef.current = event.clientY;
-    initialOffsetRef.current = dragOffset;
-    dragOffsetRef.current = dragOffset;
-    panelHeightRef.current = panelRef.current?.getBoundingClientRect().height ?? 300;
-    panelRef.current?.classList.add('is-dragging');
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    } catch {
-      // Some mobile browsers do not support pointer capture on a section.
-    }
-  };
-  const movePanelDrag = (event: PointerEvent<HTMLElement>) => {
-    if (dragStartRef.current !== null) {
-      const delta = event.clientY - dragStartRef.current;
-      const height = panelHeightRef.current;
-      const newOffset = Math.min(height, Math.max(0, initialOffsetRef.current + delta));
-      dragOffsetRef.current = newOffset;
-      // Direct DOM update: 0 React re-renders while dragging
-      panelRef.current?.style.setProperty('--baharoute-trip-drag', `${newOffset}px`);
-    }
-  };
-  const finishPanelDrag = (event: PointerEvent<HTMLElement>) => {
-    if (dragStartRef.current === null) return;
-    const height = panelHeightRef.current || 1;
-    const offset = dragOffsetRef.current;
-    dragStartRef.current = null;
-    panelRef.current?.classList.remove('is-dragging');
-
-    // Completely dragged down (>= 75% of panel height) -> collapse to reopen button
-    if (offset / height >= 0.75) {
-      setIsClosed(true);
-      setDragOffset(0);
-    } else {
-      // Commit final position to React state on release
-      setDragOffset(offset);
-    }
-
-    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  };
+  const {
+    panelRef,
+    dragOffset,
+    isClosed,
+    isReopening,
+    startPanelDrag,
+    movePanelDrag,
+    finishPanelDrag,
+    reopen,
+    onAnimationEnd,
+  } = usePanelDrag();
 
   if (isClosed) {
     return (
       <button
         type="button"
         className="baharoute-trip-reopen baharoute-focus-ring"
-        onClick={() => {
-          setIsReopening(true);
-          setIsClosed(false);
-          setDragOffset(0);
-        }}
+        onClick={reopen}
       >
         Baha-Route
       </button>
@@ -288,10 +243,10 @@ export function RouteSearchPanel({
     <section
       ref={panelRef}
       className={`baharoute-trip-panel baharoute-search-panel${isReopening ? ' is-reopening' : ''}`}
-      style={{ '--baharoute-trip-drag': `${dragOffset}px` } as CSSProperties}
+      style={{ '--baharoute-trip-drag': `${dragOffset}px` } as React.CSSProperties}
       aria-label="Plan a trip"
       data-testid="route-search-panel"
-      onAnimationEnd={() => setIsReopening(false)}
+      onAnimationEnd={onAnimationEnd}
     >
       <div
         className="baharoute-search-panel__drag-target"
