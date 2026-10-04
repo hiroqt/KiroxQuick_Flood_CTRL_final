@@ -14,7 +14,10 @@ button {
   position: fixed;
   z-index: 40;
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  box-sizing: border-box;
   top: calc(12px + env(safe-area-inset-top, 0px));
   left: calc(12px + env(safe-area-inset-left, 0px));
   padding: 8px 14px;
@@ -30,6 +33,16 @@ button {
 
 .map-page .baharoute-brand {
   left: calc(96px + env(safe-area-inset-left, 0px));
+}
+
+/* Keep Home available while loading, driving, or showing an error. Once the
+   navigation mounts, its Home link takes over the same destination. */
+.map-page:has(.baharoute-map-navigation) > .map-home {
+  display: none;
+}
+
+.map-page:has(.baharoute-map-navigation) .baharoute-brand {
+  left: calc(12px + env(safe-area-inset-left, 0px));
 }
 
 .landing-page {
