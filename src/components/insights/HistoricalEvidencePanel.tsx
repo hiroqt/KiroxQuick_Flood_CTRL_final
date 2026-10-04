@@ -12,6 +12,7 @@
 // reports, official closures, or routing.
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { usePanelDrag } from '../../hooks/usePanelDrag';
 import type {
   HistoricalFloodEvidence,
   HistoricalLocationPrecision,
@@ -117,12 +118,57 @@ export function HistoricalEvidencePanel({
     onFilteredChange?.(filterHistoricalEvidence(evidence, next));
   };
 
+  const {
+    panelRef,
+    dragOffset,
+    isClosed,
+    isReopening,
+    startPanelDrag,
+    movePanelDrag,
+    finishPanelDrag,
+    reopen,
+    onAnimationEnd,
+  } = usePanelDrag({ cssVarName: '--baharoute-hist-drag' });
+
+  if (isClosed) {
+    return (
+      <button
+        type="button"
+        className="baharoute-hist-reopen baharoute-focus-ring"
+        data-testid="historical-panel-reopen"
+        onClick={reopen}
+      >
+        Historical Flood Evidence
+      </button>
+    );
+  }
+
   return (
     <section
-      className={['baharoute-hist-evidence', className].filter(Boolean).join(' ')}
+      ref={panelRef}
+      className={['baharoute-hist-evidence', isReopening ? 'is-reopening' : '', className].filter(Boolean).join(' ')}
+      style={{ '--baharoute-hist-drag': `${dragOffset}px` } as React.CSSProperties}
       aria-label="Historical flood evidence"
       data-testid="historical-evidence-panel"
+      onAnimationEnd={onAnimationEnd}
     >
+      <div
+        className="baharoute-hist-evidence__drag-target"
+        style={{ display: 'flex', height: 36, touchAction: 'none' }}
+        role="separator"
+        aria-label="Drag to move Historical Flood Evidence panel"
+        data-testid="historical-panel-drag-handle"
+        onPointerDown={startPanelDrag}
+        onPointerMove={movePanelDrag}
+        onPointerUp={finishPanelDrag}
+        onPointerCancel={finishPanelDrag}
+      >
+        <span
+          className="baharoute-search-panel__drag-line"
+          style={{ display: 'block', width: 64, height: 7, background: '#68727d', borderRadius: 999 }}
+        />
+      </div>
+
       {/* Header: title + HISTORICAL badge + close. */}
       <header className="baharoute-hist-evidence__head">
         <div className="baharoute-hist-evidence__heading">
