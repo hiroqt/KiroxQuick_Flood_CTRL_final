@@ -600,7 +600,7 @@ export function MapView({
     barangayFloodRisk: false,
     communityReports: false,
     officialClosures: false,
-    floodSusceptibility: false,
+    floodSusceptibility: true,
   });
 
   const [phase, setPhase] = useState<MapPhase>('loading');
@@ -634,7 +634,7 @@ export function MapView({
     barangayFloodRisk: false,
     communityReports: false,
     officialClosures: false,
-    floodSusceptibility: false,
+    floodSusceptibility: true,
   });
   const floodRiskVisible = layerVisible.barangayFloodRisk;
   const historicalVisible = layerVisible.floodSusceptibility;
