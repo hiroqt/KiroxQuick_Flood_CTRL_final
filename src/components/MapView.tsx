@@ -1559,6 +1559,7 @@ export function MapView({
   // no standalone Play button.
   type TripStage = 'search' | 'comparing' | 'navigating';
   const [tripStage, setTripStage] = useState<TripStage>('search');
+  const [routePanelMinimized, setRoutePanelMinimized] = useState(false);
   const [tripOrigin, setTripOrigin] = useState<TripEndpoint | null>(null);
   const [tripDestination, setTripDestination] = useState<TripEndpoint | null>(null);
   const [routeOptions, setRouteOptions] = useState<readonly RouteOption[]>([]);
@@ -1904,6 +1905,7 @@ export function MapView({
     markerManager?.setOrigin(origin.coord[0], origin.coord[1]);
     markerManager?.setDestination(destination.coord[0], destination.coord[1]);
     setTripStage('comparing');
+    setRoutePanelMinimized(window.innerWidth < 768);
     // A fresh search resets any manual selection so the recommended route wins.
     manualRouteSelectionRef.current = false;
     void computeAndShowRoutes(origin, destination, travelMode, routePreference);
@@ -2511,6 +2513,7 @@ export function MapView({
 
   /** Returns to the search step, clearing the comparison; reframes the trip. */
   const handleTripBack = (): void => {
+    setRoutePanelMinimized(false);
     setPopup(null);
     handleMapModeChange('route');
     setRouteOptions([]);
@@ -2543,6 +2546,7 @@ export function MapView({
    */
   const handleViewRoute = (): void => {
     setPopup(null);
+    setRoutePanelMinimized(false);
     setTripStage('comparing');
   };
 
@@ -2572,6 +2576,35 @@ export function MapView({
    */
   const selectedRouteOption =
     routeOptions.find((o) => o.candidate.id === selectedRouteId) ?? null;
+  // Fit the preview after the compact sheet has rendered, keeping both trip
+  // markers (especially Point A) above the sheet and below mobile navigation.
+  useEffect(() => {
+    if (!routePanelMinimized || primaryLeftPanel !== 'compare' || !tripOrigin || !tripDestination) return;
+    const container = containerRef.current;
+    const map = managerRef.current?.getMap?.();
+    if (!container || !map || container.clientWidth >= 768) return;
+    const fit = (map as unknown as { fitBounds?: (bounds: unknown, options: unknown) => void }).fitBounds;
+    if (!fit) return;
+    const host = container.parentElement;
+    const rect = container.getBoundingClientRect();
+    const navigation = host?.querySelector('.baharoute-mode-switcher-host')?.getBoundingClientRect();
+    const sheet = host?.querySelector('.baharoute-trip-host')?.getBoundingClientRect();
+    const points = [tripOrigin.coord, tripDestination.coord, ...routeOptions.flatMap(option => option.candidate.route)];
+    fit.call(map, [
+      [Math.min(...points.map(point => point[0])), Math.min(...points.map(point => point[1]))],
+      [Math.max(...points.map(point => point[0])), Math.max(...points.map(point => point[1]))],
+    ], {
+      padding: {
+        top: Math.max(24, (navigation?.bottom ?? rect.top) - rect.top + 24),
+        bottom: Math.max(24, rect.bottom - (sheet?.top ?? rect.bottom) + 24),
+        left: 40,
+        right: 40,
+      },
+      pitch: 0,
+      maxZoom: 16,
+      duration: 700,
+    });
+  }, [routePanelMinimized, primaryLeftPanel, tripOrigin, tripDestination, routeOptions]);
   const showRouteReadyChip =
     !driving &&
     phase !== 'error' &&
@@ -3291,7 +3324,26 @@ export function MapView({
         onDismiss={handleConsentDismiss}
       />
       {primaryLeftPanel === 'compare' && (
-        <div className="baharoute-trip-host" data-testid="trip-host">
+        <div className="baharoute-trip-host" data-testid="trip-host" data-minimized={routePanelMinimized ? 'true' : undefined}>
+          <button
+            type="button"
+            className="baharoute-route-sheet-toggle baharoute-focus-ring"
+            aria-expanded={!routePanelMinimized}
+            aria-controls="route-comparison-details"
+            onClick={() => setRoutePanelMinimized(value => !value)}
+          >
+            {routePanelMinimized ? 'View routes' : 'Minimize routes'}
+          </button>
+          {routePanelMinimized && (
+            <div className="baharoute-route-summary" data-testid="route-summary">
+              <strong>Point A · {tripOrigin?.label}</strong>
+              <span>Point B · {tripDestination?.label}</span>
+              <span>{findingRoutes ? 'Finding routes…' : selectedRouteOption
+                ? `${formatDuration(selectedRouteOption.candidate.durationS)} · ${formatDistance(selectedRouteOption.candidate.distanceM)}`
+                : 'No routes available. View routes to change your trip.'}</span>
+            </div>
+          )}
+          <div id="route-comparison-details" className="baharoute-route-comparison-details">
           <RouteComparePanel
             options={routeOptions}
             selectedId={selectedRouteId}
@@ -3307,6 +3359,7 @@ export function MapView({
               riskStatus ? formatRelativeTime(riskStatus.lastUpdated) : null
             }
           />
+          </div>
         </div>
       )}
 

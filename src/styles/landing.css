@@ -45,6 +45,13 @@ button {
   left: calc(12px + env(safe-area-inset-left, 0px));
 }
 
+/* Reserve a row for the floating Home link above the mobile driving banner. */
+@media (max-width: 767px) {
+  .map-page .baharoute-drive-hud {
+    padding-top: calc(64px + env(safe-area-inset-top, 0px));
+  }
+}
+
 .landing-page {
   font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
 }

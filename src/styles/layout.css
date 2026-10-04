@@ -2153,6 +2153,40 @@ body,
   gap: 12px;
   color: var(--baharoute-text);
 }
+.baharoute-route-sheet-toggle,
+.baharoute-route-summary {
+  display: none;
+}
+@media (max-width: 767px) {
+  .baharoute-route-sheet-toggle {
+    display: block;
+    min-height: 44px;
+    margin: 0 0 8px auto;
+    border: 0;
+    border-radius: 8px;
+    padding: 8px 12px;
+    background: var(--baharoute-surface);
+    color: var(--baharoute-focus-ring-color);
+    font: inherit;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .baharoute-trip-host[data-minimized='true'] .baharoute-route-comparison-details {
+    display: none;
+  }
+  .baharoute-route-summary {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    color: var(--baharoute-text);
+    font-size: 13px;
+  }
+  .baharoute-route-summary > * {
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+}
 .baharoute-search-panel {
   transform: translateY(var(--baharoute-trip-drag, 0px));
   transition: transform 280ms ease-in-out;
@@ -3054,9 +3088,34 @@ body,
 }
 .baharoute-explore__header {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 10px;
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--baharoute-surface);
+}
+.baharoute-explore__toggle {
+  min-height: 44px;
+  padding: 8px 10px;
+  border: 1px solid var(--baharoute-border);
+  border-radius: 8px;
+  background: var(--baharoute-surface);
+  color: var(--baharoute-focus-ring-color);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.baharoute-explore__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+.baharoute-explore__body[hidden] {
+  display: none;
 }
 /* Keep the explanation inside the scrollable card at every panel width. */
 .baharoute-explore__header .baharoute-info {

@@ -8,7 +8,7 @@
 // This replaces the previous dense HistoricalFloodRiskPanel with a lighter,
 // progressive-disclosure layout. Filter semantics are unchanged.
 
-import { useId, useMemo } from 'react';
+import { useId, useMemo, useState } from 'react';
 import {
   historicalCitySummaries,
   historicalCitySummaryByPsgc,
@@ -61,6 +61,8 @@ export function HistoricalExplorePanel({
   className,
 }: HistoricalExplorePanelProps) {
   const ids = { area: useId(), city: useId(), barangay: useId(), risk: useId() };
+  const contentId = useId();
+  const [minimized, setMinimized] = useState(false);
 
   const cityBarangays = useMemo(
     () =>
@@ -98,11 +100,21 @@ export function HistoricalExplorePanel({
     >
       <div className="baharoute-explore__header">
         <h2 className="baharoute-explore__title">Explore historical risk</h2>
+        <button
+          type="button"
+          className="baharoute-explore__toggle baharoute-focus-ring"
+          aria-expanded={!minimized}
+          aria-controls={contentId}
+          onClick={() => setMinimized(value => !value)}
+        >
+          {minimized ? 'Expand' : 'Minimize'}
+        </button>
         <InfoTooltip label="About historical flood susceptibility">
           {TOOLTIP_TEXT.historical}
         </InfoTooltip>
       </div>
 
+      <div id={contentId} className="baharoute-explore__body" hidden={minimized}>
       {(selectedBarangay || selectedCity) && (
         <div className="baharoute-historical-selection" role="status" data-testid="historical-selected-area">
           <span className="baharoute-historical-selection__label">{selectedBarangay ? 'Selected barangay' : 'Selected city / LGU'}</span>
@@ -378,6 +390,7 @@ export function HistoricalExplorePanel({
         {historicalDatasetMeta.license}
       </p>
       <Disclaimer variant="susceptibility" />
+      </div>
     </section>
   );
 }

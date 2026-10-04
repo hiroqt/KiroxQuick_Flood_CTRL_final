@@ -502,6 +502,44 @@ describe('MapView — trip flow entry (Search → Compare → Start)', () => {
 });
 
 describe('MapView — route preview (auto lines + selection + Start)', () => {
+  it('minimizes mobile route choices after Point B and frames the trip above the sheet', async () => {
+    const { default: userEvent } = await import('@testing-library/user-event');
+    const user = userEvent.setup();
+    const previousWidth = window.innerWidth;
+    window.innerWidth = 390;
+    const fitBounds = vi.fn();
+    const { manager } = makeFakeManager({ fitBounds } as unknown as MinimalMap);
+    const view = render(<MapView config={CONFIG} createMapManager={() => manager}
+      createMarkerManager={() => ({ setOrigin: vi.fn(), setDestination: vi.fn(), destroy: vi.fn() }) as never} />);
+    const container = screen.getByTestId('map-container');
+    Object.defineProperty(container, 'clientWidth', { value: 390 });
+    const measure = vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      if (this === container) return { top: 0, bottom: 844 } as DOMRect;
+      if (this.classList.contains('baharoute-mode-switcher-host')) return { top: 90, bottom: 144 } as DOMRect;
+      if (this.classList.contains('baharoute-trip-host')) return { top: 704, bottom: 844 } as DOMRect;
+      return { top: 0, bottom: 0 } as DOMRect;
+    });
+    try {
+      await pickPitxToMoa(user);
+      expect(await screen.findByTestId('route-summary')).toHaveTextContent(/Point A.*PITX/);
+      expect(screen.getByTestId('route-summary')).toHaveTextContent(/Point B.*Mall of Asia/);
+      expect(screen.getByTestId('trip-host')).toHaveAttribute('data-minimized', 'true');
+      expect(fitBounds).toHaveBeenCalledWith(expect.any(Array), expect.objectContaining({
+        pitch: 0,
+        padding: { top: 168, bottom: 164, left: 40, right: 40 },
+      }));
+      await user.click(screen.getByRole('button', { name: 'View routes' }));
+      expect(screen.getByTestId('trip-host')).not.toHaveAttribute('data-minimized');
+      expect(screen.getByTestId('start-route-button')).toBeInTheDocument();
+      await user.click(screen.getByRole('button', { name: 'Minimize routes' }));
+      expect(screen.getByTestId('trip-host')).toHaveAttribute('data-minimized', 'true');
+    } finally {
+      measure.mockRestore();
+      window.innerWidth = previousWidth;
+      view.unmount();
+    }
+  });
+
   async function pickPitxToMoa(user: ReturnType<typeof import('@testing-library/user-event').default.setup>) {
     await user.click(screen.getByLabelText('From'));
     await user.type(screen.getByLabelText('From'), 'PITX');
