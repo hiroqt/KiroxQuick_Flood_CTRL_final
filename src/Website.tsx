@@ -28,10 +28,7 @@ export function Website() {
       >
         <MapApp />
       </Suspense>
-      <a
-        href="/"
-        className="map-home"
-      >
+      <a href="/" className="map-home baharoute-focus-ring">
         Home
       </a>
     </div>

@@ -2616,7 +2616,7 @@ body,
 /* --- Select-on-map mode banner ------------------------------------------- */
 .baharoute-select-banner {
   position: absolute;
-  top: calc(var(--baharoute-control-inset) + var(--baharoute-safe-top) + 46px);
+  top: calc(var(--baharoute-control-inset) + var(--baharoute-safe-top) + 64px);
   left: 50%;
   transform: translateX(-50%);
   z-index: 7;
@@ -2624,6 +2624,7 @@ body,
   align-items: center;
   gap: 12px;
   max-width: calc(100vw - 32px);
+  box-sizing: border-box;
   padding: 10px 14px;
   background: var(--baharoute-surface);
   color: var(--baharoute-text);
@@ -2632,9 +2633,13 @@ body,
   font-size: 14px;
   font-weight: 600;
 }
+.baharoute-select-banner > span {
+  min-width: 0;
+  line-height: 1.4;
+}
 .baharoute-select-banner__cancel {
   flex: none;
-  min-height: 32px;
+  min-height: var(--baharoute-touch-target);
   padding: 4px 12px;
   border: 1px solid var(--baharoute-border);
   border-radius: 999px;
@@ -3838,7 +3843,7 @@ body,
   z-index: 7;
   pointer-events: none;
 }
-.baharoute-mode-switcher {
+.baharoute-map-navigation {
   display: inline-flex;
   gap: 2px;
   padding: 3px;
@@ -3848,8 +3853,16 @@ body,
   box-shadow: var(--baharoute-shadow, 0 6px 24px rgba(0, 0, 0, 0.18));
   pointer-events: auto;
 }
+.baharoute-mode-switcher {
+  display: flex;
+  gap: 2px;
+  min-width: 0;
+}
 .baharoute-mode-switcher__option {
-  min-height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--baharoute-touch-target);
   padding: 0 16px;
   font: inherit;
   font-size: 13px;
@@ -4073,10 +4086,11 @@ body,
 /* Filters — 2×2 grid. */
 .baharoute-hist-filters {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
 }
 .baharoute-hist-filters__field {
+  min-width: 0;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -4088,6 +4102,10 @@ body,
   color: var(--baharoute-text-muted, #6f6a62);
 }
 .baharoute-hist-filters select {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  min-height: var(--baharoute-touch-target);
   font: inherit;
   font-size: 12px;
   padding: 7px 8px;
@@ -4312,17 +4330,66 @@ body,
   color: var(--baharoute-hist-ink-soft);
 }
 
-/* Historical UI — mobile layout. The panel is a bottom sheet (base rule) and
-   the mode switcher stays compact so it never overlaps the top controls. */
+/* Give the navigation its own row below the brand and demo badge on tablets
+   and phones, where a centered row would collide with the header. */
+@media (max-width: 1023px) {
+  .baharoute-mode-switcher-host {
+    top: calc(var(--baharoute-safe-top) + 90px);
+  }
+  .baharoute-select-banner {
+    top: calc(var(--baharoute-safe-top) + 152px);
+  }
+}
+
+/* Historical UI — mobile layout. */
 @media (max-width: 767px) {
+  .baharoute-select-banner {
+    left: calc(var(--baharoute-control-inset) + var(--baharoute-safe-left));
+    right: calc(var(--baharoute-control-inset) + var(--baharoute-safe-right));
+    transform: none;
+    max-width: none;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 12px 14px;
+    border-radius: 14px;
+  }
+  .baharoute-select-banner__cancel {
+    align-self: flex-end;
+  }
+  .baharoute-mode-switcher-host {
+    left: calc(var(--baharoute-control-inset) + var(--baharoute-safe-left));
+    right: calc(var(--baharoute-control-inset) + var(--baharoute-safe-right));
+    transform: none;
+  }
+  .baharoute-map-navigation {
+    display: flex;
+  }
+  .baharoute-map-navigation > a {
+    flex: 1;
+  }
+  .baharoute-mode-switcher {
+    flex: 3;
+  }
   .baharoute-mode-switcher__option {
-    padding: 0 12px;
+    flex: 1;
+    min-width: 0;
+    padding: 0 4px;
     font-size: 12px;
+  }
+  .baharoute-historical-host {
+    max-height: min(72dvh, calc(100dvh - var(--baharoute-safe-top) - 152px));
   }
   .baharoute-hist-evidence {
     border-radius: 16px 16px 0 0;
     border-top-width: 4px;
     padding: 14px 16px calc(16px + var(--baharoute-safe-bottom, 0px));
+  }
+}
+
+@media (max-width: 359px) {
+  .baharoute-hist-filters {
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 

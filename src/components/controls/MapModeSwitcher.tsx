@@ -37,31 +37,36 @@ const MODES: readonly ModeDef[] = [
 
 export function MapModeSwitcher({ value, onChange, className }: MapModeSwitcherProps) {
   return (
-    <div
-      className={['baharoute-mode-switcher', className].filter(Boolean).join(' ')}
-      role="radiogroup"
-      aria-label="Map mode"
-      data-testid="map-mode-switcher"
-    >
-      {MODES.map((mode) => {
-        const active = value === mode.id;
-        return (
-          <button
-            key={mode.id}
-            type="button"
-            role="radio"
-            aria-checked={active}
-            aria-label={mode.ariaLabel}
-            className="baharoute-mode-switcher__option baharoute-focus-ring"
-            data-active={active ? 'true' : undefined}
-            data-testid={`map-mode-${mode.id}`}
-            onClick={() => onChange(mode.id)}
-          >
-            {mode.label}
-          </button>
-        );
-      })}
-    </div>
+    <nav className="baharoute-map-navigation" aria-label="Map navigation">
+      <a href="/" className="baharoute-mode-switcher__option baharoute-focus-ring">
+        Home
+      </a>
+      <div
+        className={['baharoute-mode-switcher', className].filter(Boolean).join(' ')}
+        role="radiogroup"
+        aria-label="Map mode"
+        data-testid="map-mode-switcher"
+      >
+        {MODES.map((mode) => {
+          const active = value === mode.id;
+          return (
+            <button
+              key={mode.id}
+              type="button"
+              role="radio"
+              aria-checked={active}
+              aria-label={mode.ariaLabel}
+              className="baharoute-mode-switcher__option baharoute-focus-ring"
+              data-active={active ? 'true' : undefined}
+              data-testid={`map-mode-${mode.id}`}
+              onClick={() => onChange(mode.id)}
+            >
+              {mode.label}
+            </button>
+          );
+        })}
+      </div>
+    </nav>
   );
 }
 
