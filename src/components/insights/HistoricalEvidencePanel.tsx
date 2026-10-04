@@ -31,6 +31,7 @@ import {
   type HistoricalEvidenceFilter,
 } from '../../services/historicalEvidenceAgent';
 import { HISTORICAL_EVENTS, historicalCities } from '../../data/historical/historicalFloodEvidence';
+import { HistoricalRiskSources } from './HistoricalRiskSources';
 
 export interface HistoricalEvidencePanelProps {
   /** The full historical dataset (15 items). */
@@ -177,17 +178,20 @@ export function HistoricalEvidencePanel({
           </span>
           <h2 className="baharoute-hist-evidence__title">Historical Flood Evidence</h2>
         </div>
-        {onClose && (
-          <button
-            type="button"
-            className="baharoute-hist-evidence__close baharoute-icon-button baharoute-focus-ring"
-            aria-label="Close historical flood evidence"
-            data-testid="historical-panel-close"
-            onClick={onClose}
-          >
-            <span aria-hidden="true">×</span>
-          </button>
-        )}
+        <div className="baharoute-hist-evidence__head-actions">
+          <HistoricalRiskSources />
+          {onClose && (
+            <button
+              type="button"
+              className="baharoute-hist-evidence__close baharoute-icon-button baharoute-focus-ring"
+              aria-label="Close historical flood evidence"
+              data-testid="historical-panel-close"
+              onClick={onClose}
+            >
+              <span aria-hidden="true">×</span>
+            </button>
+          )}
+        </div>
       </header>
 
       {/* Disclaimer / subtitle — explicit, always visible. */}
