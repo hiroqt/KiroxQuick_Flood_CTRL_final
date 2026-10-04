@@ -22,7 +22,7 @@ The Vite dev server runs on http://localhost:5173.
 - `.env.local` (gitignored) holds your real token. Never commit it. `.env`, `.env.local`, and `.env.*.local` are all ignored.
 - The token is read via `import.meta.env.VITE_MAPBOX_ACCESS_TOKEN` and applied to the map at construction.
 
-Windy Webcams API v3 is integrated through the Node camera proxy. Set `WINDY_WEBCAMS_API_KEY` in `.env.local`; it is read by the server and must never use a `VITE_` prefix. `npm run dev` starts the Vite app and local proxy together. Production runs `npm run build` followed by `npm start` in a Node 24 environment. Camera metadata requests follow the map viewport; open image popups renew one webcam's signed URL every seven minutes, and the proxy caches viewport results for five minutes. Follow Windy's image URL validity, attribution, advertising, and usage terms.
+Windy Webcams API v3 is integrated through the server-side camera proxy. Set `WINDY_WEBCAMS_API_KEY` in `.env.local`; it is read by the server and must never use a `VITE_` prefix. `npm run dev` starts the Vite app and local proxy together. A Node deployment runs `npm run build` followed by `npm start` in a Node 24 environment. Vercel serves `api/cameras.js` and `api/cameras/[id].js` as serverless functions; add `WINDY_WEBCAMS_API_KEY` to the Vercel project's Environment Variables for each deployment environment, then redeploy. Camera metadata requests follow the map viewport; open image popups renew one webcam's signed URL every seven minutes, and the proxy caches viewport results for five minutes. Follow Windy's image URL validity, attribution, advertising, and usage terms.
 
 ## Quality checks
 
